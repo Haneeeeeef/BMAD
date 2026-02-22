@@ -8,6 +8,7 @@ import { Message, Attachment } from "@/lib/types"
 import { Copy, ThumbsUp, ThumbsDown, Volume2, RotateCcw, MoreHorizontal, FileText, Music } from "lucide-react"
 import { toast } from "sonner"
 import { stabilizeStreamingMarkdown } from "@/lib/streaming-markdown"
+import { ExcalidrawDiagram } from "./excalidraw-diagram"
 
 // Parse out OpenClaw context injection blocks
 // These are internal markers that shouldn't be shown to users
@@ -117,9 +118,24 @@ export const ChatMessage = React.memo(function ChatMessage({
                   ul: ({ children }) => <ul className="list-disc pl-6 mb-4 space-y-2">{children}</ul>,
                   ol: ({ children }) => <ol className="list-decimal pl-6 mb-4 space-y-2">{children}</ol>,
                   li: ({ children }) => <li className="text-[16px] leading-7">{children}</li>,
-                  code: ({ children }) => (
-                    <code className="bg-muted px-1.5 py-0.5 rounded text-[14px] font-mono">{children}</code>
-                  ),
+                  code: ({ className, children, ...props }) => {
+                    const match = /language-(\w+)/.exec(className || "")
+                    const lang = match ? match[1] : ""
+                    const codeString = String(children).replace(/\n$/, "")
+
+                    // Render mermaid diagrams with Excalidraw
+                    if (lang === "mermaid") {
+                      return <ExcalidrawDiagram chart={codeString} className="my-4" />
+                    }
+
+                    // Inline code (no className means inline)
+                    if (!className) {
+                      return <code className="bg-muted px-1.5 py-0.5 rounded text-[14px] font-mono" {...props}>{children}</code>
+                    }
+
+                    // Code block
+                    return <code className={cn("block text-[14px]", className)} {...props}>{children}</code>
+                  },
                   pre: ({ children }) => (
                     <pre className="bg-muted p-4 rounded-lg overflow-x-auto mb-4 text-[14px]">{children}</pre>
                   ),
@@ -137,6 +153,11 @@ export const ChatMessage = React.memo(function ChatMessage({
                   tr: ({ children }) => <tr className="border-b border-border last:border-0">{children}</tr>,
                   th: ({ children }) => <th className="px-3 py-2 text-left font-semibold text-[13px] break-words">{children}</th>,
                   td: ({ children }) => <td className="px-3 py-2 break-words whitespace-normal">{children}</td>,
+                  a: ({ href, children }) => (
+                    <a href={href} target="_blank" rel="noopener noreferrer" className="text-primary hover:underline">
+                      {children}
+                    </a>
+                  ),
                 }}
               >
                 {processMarkdown}

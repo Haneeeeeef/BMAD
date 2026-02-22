@@ -193,10 +193,6 @@ export async function POST(request: Request) {
       ? [{ role: "system" as const, content: canvasStatus }, ...transformedMessages]
       : transformedMessages
 
-    // Debug: log injected context
-    if (canvasStatus) {
-      console.log("[Chat API] Injected context:", canvasStatus)
-    }
 
     const response = await fetch(
       `${openclawUrl}/v1/chat/completions`,

@@ -1,19 +1,18 @@
 "use client"
 
-import { useEffect, useRef, useState, useCallback, lazy, Suspense } from "react"
+import { useEffect, useRef, useState, useCallback } from "react"
 import { useParams, useRouter } from "next/navigation"
 import { useChatContext } from "@/contexts/chat-context"
 import { ChatInput, ChatInputHandle } from "@/components"
 import { ChatMessage } from "@/components/chat-message"
 import { Message, Attachment, generateId } from "@/lib/types"
-import { Loader2, ChevronDown, UserRoundPlus, MoreHorizontal, Archive, Trash2, Pencil, FileText } from "lucide-react"
+import { Loader2, ChevronDown, UserRoundPlus, MoreHorizontal, Archive, Trash2, Pencil, FileText, Share2, Mail, Link2, FileDown } from "lucide-react"
+import { toast } from "sonner"
 
-// Lazy load heavy canvas component
-const DiscoveryCanvas = lazy(() =>
-  import("@/components/discovery-canvas").then((mod) => ({ default: mod.DiscoveryCanvas }))
-)
+// Import canvas component (Excalidraw inside is already lazy loaded)
+import { DiscoveryCanvas } from "@/components/discovery-canvas"
 import { CanvasStatus } from "@/lib/canvas-types"
-import { loadCanvas, saveCanvas, approveCanvas, getSessionContext, type CanvasData } from "@/lib/canvas-storage"
+import { loadCanvas, saveDocument, approveDocument, setActiveDocument, removeDocument, setDocumentVersion, getSessionContext, type CanvasData, type CanvasDocument } from "@/lib/canvas-storage"
 
 // Parse artifact tag attributes
 function parseArtifactAttributes(attrString: string): Record<string, string> {
@@ -26,25 +25,100 @@ function parseArtifactAttributes(attrString: string): Record<string, string> {
   return attrs
 }
 
-// Extract artifact from content and return artifact data + cleaned content
-function extractArtifact(content: string): { artifact: { attrs: Record<string, string>; content: string } | null; cleanedContent: string } {
+// Clean XML/tool tags from content (artifact, function_calls, invoke, parameter, antml:*)
+// Used for final content after streaming completes
+function cleanXmlTags(content: string): string {
+  let cleaned = content
+    // Remove complete blocks first (greedy for nested content)
+    .replace(/<artifact[\s\S]*?<\/artifact>/gi, '')
+    .replace(/<function_calls[\s\S]*?<\/function_calls>/gi, '')
+    .replace(/<function_calls[\s\S]*?<\/antml:function_calls>/gi, '')
+    .replace(/<invoke[\s\S]*?<\/invoke>/gi, '')
+    .replace(/<invoke[\s\S]*?<\/antml:invoke>/gi, '')
+    .replace(/<parameter[\s\S]*?<\/parameter>/gi, '')
+    .replace(/<parameter[\s\S]*?<\/antml:parameter>/gi, '')
+    // Remove any remaining orphan opening/closing tags
+    .replace(/<\/?artifact[^>]*>/gi, '')
+    .replace(/<\/?function_calls[^>]*>/gi, '')
+    .replace(/<\/?antml:function_calls[^>]*>/gi, '')
+    .replace(/<\/?invoke[^>]*>/gi, '')
+    .replace(/<\/?antml:invoke[^>]*>/gi, '')
+    .replace(/<\/?parameter[^>]*>/gi, '')
+    .replace(/<\/?antml:parameter[^>]*>/gi, '')
+    .replace(/<[^>]+\/>/g, '') // self-closing tags
+
+  // Clean up multiple newlines and trim
+  return cleaned.replace(/\n{3,}/g, '\n\n').trim()
+}
+
+// Clean XML tags during streaming (handles incomplete tags)
+function cleanStreamingXml(content: string): string {
+  return content
+    // Remove complete blocks
+    .replace(/<artifact[\s\S]*?<\/artifact>/gi, '')
+    .replace(/<function_calls[\s\S]*?<\/function_calls>/gi, '')
+    .replace(/<function_calls[\s\S]*?<\/antml:function_calls>/gi, '')
+    .replace(/<invoke[\s\S]*?<\/invoke>/gi, '')
+    .replace(/<invoke[\s\S]*?<\/antml:invoke>/gi, '')
+    .replace(/<parameter[\s\S]*?<\/parameter>/gi, '')
+    .replace(/<parameter[\s\S]*?<\/antml:parameter>/gi, '')
+    // Remove incomplete blocks (streaming - no closing tag yet)
+    .replace(/<artifact[^>]*>[\s\S]*$/gi, '')
+    .replace(/<function_calls[^>]*>[\s\S]*$/gi, '')
+    .replace(/<invoke[^>]*>[\s\S]*$/gi, '')
+    .replace(/<parameter[^>]*>[\s\S]*$/gi, '')
+    // Remove orphan tags
+    .replace(/<\/?artifact[^>]*>/gi, '')
+    .replace(/<\/?function_calls[^>]*>/gi, '')
+    .replace(/<\/?antml:function_calls[^>]*>/gi, '')
+    .replace(/<\/?invoke[^>]*>/gi, '')
+    .replace(/<\/?antml:invoke[^>]*>/gi, '')
+    .replace(/<\/?parameter[^>]*>/gi, '')
+    .replace(/<\/?antml:parameter[^>]*>/gi, '')
+    // Remove incomplete opening tags at end (e.g., "<funct" or "<param")
+    .replace(/<[a-z_:]*$/gi, '')
+    .replace(/<\/[a-z_:]*$/gi, '')
+}
+
+// Extract ALL artifacts from content and return array + cleaned content
+interface ExtractedArtifact {
+  identifier: string
+  title: string
+  type: string
+  content: string
+  status: CanvasStatus
+  agent?: string
+  version?: number // Optional - storage auto-increments if not provided
+}
+
+function extractArtifacts(content: string): { artifacts: ExtractedArtifact[]; cleanedContent: string } {
   const artifactRegex = /<artifact\s+([^>]*)>([\s\S]*?)<\/artifact>/gi
-  const match = artifactRegex.exec(content)
+  const artifacts: ExtractedArtifact[] = []
+  let match
 
-  if (!match) {
-    return { artifact: null, cleanedContent: content }
+  while ((match = artifactRegex.exec(content)) !== null) {
+    const attrs = parseArtifactAttributes(match[1])
+    artifacts.push({
+      identifier: attrs.identifier || `doc-${Date.now()}`,
+      title: attrs.title || "Untitled",
+      type: attrs.type || "text/markdown",
+      content: match[2].trim(),
+      status: (attrs.status as CanvasStatus) || "awaiting_approval",
+      agent: attrs.agent,
+      // Only set version if explicitly provided - otherwise let storage auto-increment
+      version: attrs.version ? parseInt(attrs.version, 10) : undefined,
+    })
   }
 
-  const attrs = parseArtifactAttributes(match[1])
-  const artifactContent = match[2].trim()
+  // Clean all XML tags
+  const baseCleanedContent = cleanXmlTags(content)
 
-  // Replace artifact tag with a placeholder message
-  const cleanedContent = content.replace(artifactRegex, '\n\n*[Canvas document created - see sidebar]*\n\n').trim()
+  // Add placeholder if any artifacts were found
+  const cleanedContent = artifacts.length > 0
+    ? baseCleanedContent + `\n\n*[${artifacts.length} document${artifacts.length > 1 ? 's' : ''} created - see sidebar]*`
+    : baseCleanedContent
 
-  return {
-    artifact: { attrs, content: artifactContent },
-    cleanedContent
-  }
+  return { artifacts, cleanedContent }
 }
 import { useSidebar } from "@/components/app-shell"
 import {
@@ -52,6 +126,10 @@ import {
   DropdownMenuContent,
   DropdownMenuItem,
   DropdownMenuTrigger,
+  DropdownMenuSub,
+  DropdownMenuSubTrigger,
+  DropdownMenuSubContent,
+  DropdownMenuSeparator,
 } from "@/components/ui/dropdown-menu"
 
 export default function ChatPage() {
@@ -69,10 +147,10 @@ export default function ChatPage() {
   const [scrollToMessageId, setScrollToMessageId] = useState<string | null>(null)
   const [shouldAutoScroll, setShouldAutoScroll] = useState(true)
 
-  // Canvas state
+  // Canvas state (multi-document)
   const [showCanvas, setShowCanvas] = useState(false)
-  const [canvasContent, setCanvasContent] = useState<string | null>(null)
-  const [canvasStatus, setCanvasStatus] = useState<CanvasStatus>("draft")
+  const [canvasData, setCanvasData] = useState<CanvasData | null>(null)
+  const [activeDocumentId, setActiveDocumentId] = useState<string | undefined>()
   const [canvasWidth, setCanvasWidth] = useState(520) // Default 520px
   const isResizing = useRef(false)
   const messagesEndRef = useRef<HTMLDivElement>(null)
@@ -96,14 +174,14 @@ export default function ChatPage() {
   useEffect(() => {
     if (sessionId) {
       const savedCanvas = loadCanvas(sessionId)
-      if (savedCanvas) {
-        setCanvasContent(savedCanvas.content)
-        setCanvasStatus(savedCanvas.status)
+      if (savedCanvas && savedCanvas.documents.length > 0) {
+        setCanvasData(savedCanvas)
+        setActiveDocumentId(savedCanvas.activeDocumentId || savedCanvas.documents[0]?.identifier)
       }
     }
   }, [sessionId])
 
-  // Poll for canvas updates from API (Jarvis POSTs here)
+  // Poll for canvas updates from API (Jarvis POSTs here) - simplified for multi-doc
   useEffect(() => {
     if (!sessionId) return
 
@@ -113,22 +191,17 @@ export default function ChatPage() {
         const data = await res.json()
 
         if (data.exists && data.content) {
-          // Only update if content changed
-          if (data.content !== canvasContent) {
-            setCanvasContent(data.content)
-            setCanvasStatus(data.status || "draft")
-            setShowCanvas(true)
-
-            // Also save to localStorage
-            saveCanvas({
-              sessionId,
-              content: data.content,
-              status: data.status || "draft",
-              sections: data.sections,
-              createdAt: Date.now(),
-              updatedAt: Date.now(),
-            })
-          }
+          // Save as document and update state (version auto-increments if content changed)
+          const updated = saveDocument(sessionId, {
+            identifier: data.identifier || "api-document",
+            title: data.title || "Document",
+            type: data.type || "text/markdown",
+            content: data.content,
+            status: data.status || "draft",
+          })
+          setCanvasData(updated)
+          setActiveDocumentId(data.identifier || "api-document")
+          setShowCanvas(true)
         }
       } catch {
         // Polling failed, ignore
@@ -142,7 +215,7 @@ export default function ChatPage() {
     pollCanvas()
 
     return () => clearInterval(interval)
-  }, [sessionId, canvasContent])
+  }, [sessionId])
 
   // Global keypress handler - focus input on any key
   useEffect(() => {
@@ -295,15 +368,17 @@ export default function ChatPage() {
       let lastUpdateTime = 0
       const UPDATE_INTERVAL = 16 // ~60fps
 
-      // Throttled update for smooth rendering
+      // Throttled update for smooth rendering (hide XML tags during streaming)
       const updateContent = (force = false) => {
         const now = Date.now()
         if (force || now - lastUpdateTime >= UPDATE_INTERVAL) {
           lastUpdateTime = now
+          // Hide XML tags during streaming (artifact, function_calls, antml:*, invoke, parameter)
+          const displayContent = cleanStreamingXml(fullContent)
           setMessages((prev) =>
             prev.map((m) =>
               m.id === assistantMessage.id
-                ? { ...m, content: fullContent }
+                ? { ...m, content: displayContent }
                 : m
             )
           )
@@ -339,19 +414,25 @@ export default function ChatPage() {
       updateContent(true)
 
       // Check for canvas content in response (XML artifact tags)
-      const { artifact, cleanedContent } = extractArtifact(fullContent)
-      if (artifact) {
-        const status = (artifact.attrs.status as CanvasStatus) || "awaiting_approval"
-        setCanvasContent(artifact.content)
-        setCanvasStatus(status)
-        setShowCanvas(true)
-        saveCanvas({
-          sessionId,
-          content: artifact.content,
-          status,
-          createdAt: Date.now(),
-          updatedAt: Date.now(),
-        })
+      const { artifacts, cleanedContent } = extractArtifacts(fullContent)
+      if (artifacts.length > 0) {
+        let latestCanvas: CanvasData | null = null
+        for (const artifact of artifacts) {
+          latestCanvas = saveDocument(sessionId, {
+            identifier: artifact.identifier,
+            title: artifact.title,
+            type: artifact.type,
+            content: artifact.content,
+            status: artifact.status,
+            agent: artifact.agent,
+            version: artifact.version,
+          })
+        }
+        if (latestCanvas) {
+          setCanvasData(latestCanvas)
+          setActiveDocumentId(artifacts[0].identifier)
+          setShowCanvas(true)
+        }
         // Update fullContent to show cleaned version
         fullContent = cleanedContent
       }
@@ -453,15 +534,17 @@ export default function ChatPage() {
         let lastUpdateTime = 0
         const UPDATE_INTERVAL = 16 // ~60fps
 
-        // Throttled update for smooth rendering
+        // Throttled update for smooth rendering (hide XML tags during streaming)
         const updateContent = (force = false) => {
           const now = Date.now()
           if (force || now - lastUpdateTime >= UPDATE_INTERVAL) {
             lastUpdateTime = now
+            // Hide XML tags during streaming (artifact, function_calls, antml:*, invoke, parameter)
+            const displayContent = cleanStreamingXml(fullContent)
             setMessages((prev) =>
               prev.map((m) =>
                 m.id === assistantMessage.id
-                  ? { ...m, content: fullContent }
+                  ? { ...m, content: displayContent }
                   : m
               )
             )
@@ -496,21 +579,26 @@ export default function ChatPage() {
         // Final update to ensure all content is rendered
         updateContent(true)
 
-        // Check for canvas content in response
         // Check for canvas content in response (XML artifact tags)
-        const { artifact, cleanedContent } = extractArtifact(fullContent)
-        if (artifact) {
-          const status = (artifact.attrs.status as CanvasStatus) || "awaiting_approval"
-          setCanvasContent(artifact.content)
-          setCanvasStatus(status)
-          setShowCanvas(true)
-          saveCanvas({
-            sessionId,
-            content: artifact.content,
-            status,
-            createdAt: Date.now(),
-            updatedAt: Date.now(),
-          })
+        const { artifacts, cleanedContent } = extractArtifacts(fullContent)
+        if (artifacts.length > 0) {
+          let latestCanvas: CanvasData | null = null
+          for (const artifact of artifacts) {
+            latestCanvas = saveDocument(sessionId, {
+              identifier: artifact.identifier,
+              title: artifact.title,
+              type: artifact.type,
+              content: artifact.content,
+              status: artifact.status,
+              agent: artifact.agent,
+              version: artifact.version,
+            })
+          }
+          if (latestCanvas) {
+            setCanvasData(latestCanvas)
+            setActiveDocumentId(artifacts[0].identifier)
+            setShowCanvas(true)
+          }
           // Update fullContent to show cleaned version
           fullContent = cleanedContent
         }
@@ -536,12 +624,35 @@ export default function ChatPage() {
     [messages, sessionId, updateSession]
   )
 
-  const handleCanvasApprove = useCallback(() => {
-    setCanvasStatus("approved")
+  const handleCanvasApprove = useCallback((identifier: string) => {
     // Save approval to localStorage
-    const approved = approveCanvas(sessionId)
-    if (approved) {
-      setCanvasStatus(approved.status)
+    const updated = approveDocument(sessionId, identifier)
+    if (updated) {
+      setCanvasData(updated)
+    }
+  }, [sessionId])
+
+  const handleDocumentSelect = useCallback((identifier: string) => {
+    setActiveDocumentId(identifier)
+    setActiveDocument(sessionId, identifier)
+  }, [sessionId])
+
+  const handleDocumentClose = useCallback((identifier: string) => {
+    const updated = removeDocument(sessionId, identifier)
+    if (updated) {
+      setCanvasData(updated)
+      setActiveDocumentId(updated.activeDocumentId)
+      // Close canvas if no documents left
+      if (updated.documents.length === 0) {
+        setShowCanvas(false)
+      }
+    }
+  }, [sessionId])
+
+  const handleVersionChange = useCallback((identifier: string, version: number) => {
+    const updated = setDocumentVersion(sessionId, identifier, version)
+    if (updated) {
+      setCanvasData(updated)
     }
   }, [sessionId])
 
@@ -553,10 +664,28 @@ export default function ChatPage() {
     setShowCanvas(true)
   }, [])
 
-  const handleCanvasEditRequest = useCallback((request: string) => {
-    // Send edit request as a message to Jarvis
-    sendMessage(`Please update the canvas: ${request}`)
-  }, [sendMessage])
+
+  // Share handlers
+  const handleShareEmail = useCallback(() => {
+    const subject = encodeURIComponent(`Chat: ${session?.title || 'Jarvis Conversation'}`)
+    const body = encodeURIComponent(`Check out this conversation:\n\n${window.location.href}`)
+    window.open(`mailto:?subject=${subject}&body=${body}`, '_blank')
+  }, [session?.title])
+
+  const handleCopyLink = useCallback(async () => {
+    try {
+      await navigator.clipboard.writeText(window.location.href)
+      toast.success('Link copied to clipboard')
+    } catch {
+      toast.error('Failed to copy link')
+    }
+  }, [])
+
+  // PDF export handler
+  const handleExportPDF = useCallback(() => {
+    // Use browser print dialog for PDF
+    window.print()
+  }, [])
 
   // Canvas resize handlers
   const handleResizeStart = useCallback((e: React.MouseEvent) => {
@@ -611,7 +740,7 @@ export default function ChatPage() {
       <div className={`fixed top-3 z-10 transition-all duration-200`} style={{ left: `calc(${sidebarWidth} + 1rem)` }}>
         <DropdownMenu>
           <DropdownMenuTrigger asChild>
-            <button className="flex items-center gap-1 text-[18px] font-medium hover:bg-muted/80 rounded-lg px-2 py-1 transition-colors bg-background/80 backdrop-blur-sm">
+            <button className="flex items-center gap-1 text-[18px] font-medium hover:bg-muted/80 rounded-lg px-2 py-1 transition-colors bg-background/80 backdrop-blur-sm" aria-label="Select agent">
               Jarvis
               <ChevronDown className="h-4 w-4 text-muted-foreground" />
             </button>
@@ -622,9 +751,9 @@ export default function ChatPage() {
         </DropdownMenu>
       </div>
 
-      {/* Header controls - hide when canvas is open (X in canvas closes it) */}
-      {!showCanvas && (
-        <div className="fixed top-3 right-4 z-10 flex items-center gap-1 bg-background/80 backdrop-blur-sm rounded-lg">
+      {/* Header controls */}
+      <div className="fixed top-3 right-4 z-10 flex items-center gap-1 bg-background/80 backdrop-blur-sm rounded-lg">
+        {!showCanvas && (
           <button
             onClick={handleCanvasOpen}
             className="flex items-center gap-2 text-sm text-foreground/70 hover:text-foreground hover:bg-muted rounded-lg px-3 py-1.5 transition-colors"
@@ -633,39 +762,58 @@ export default function ChatPage() {
             <FileText className="h-4 w-4" />
             <span className="hidden sm:inline">Canvas</span>
           </button>
-          <button
-            className="flex items-center gap-2 text-sm text-foreground/70 hover:text-foreground hover:bg-muted rounded-lg px-3 py-1.5 transition-colors"
-            aria-label="Invite"
-          >
-            <UserRoundPlus className="h-4 w-4" />
-            <span className="hidden sm:inline">Invite</span>
-          </button>
-          <DropdownMenu>
-            <DropdownMenuTrigger asChild>
-              <button
-                className="p-2 text-muted-foreground hover:text-foreground hover:bg-muted rounded-lg transition-colors"
-                aria-label="More options"
-              >
-                <MoreHorizontal className="h-4 w-4" />
-              </button>
-            </DropdownMenuTrigger>
-            <DropdownMenuContent align="end">
-              <DropdownMenuItem>
-                <Pencil className="h-4 w-4 mr-2" />
-                Rename
-              </DropdownMenuItem>
-              <DropdownMenuItem>
-                <Archive className="h-4 w-4 mr-2" />
-                Archive
-              </DropdownMenuItem>
-              <DropdownMenuItem className="text-destructive">
-                <Trash2 className="h-4 w-4 mr-2" />
-                Delete
-              </DropdownMenuItem>
-            </DropdownMenuContent>
-          </DropdownMenu>
-        </div>
-      )}
+        )}
+        <DropdownMenu>
+          <DropdownMenuTrigger asChild>
+            <button
+              className="p-2 text-muted-foreground hover:text-foreground hover:bg-muted rounded-lg transition-colors"
+              aria-label="More options"
+            >
+              <MoreHorizontal className="h-5 w-5" />
+            </button>
+          </DropdownMenuTrigger>
+          <DropdownMenuContent align="end" className="w-48">
+            <DropdownMenuItem>
+              <UserRoundPlus className="h-4 w-4 mr-2" />
+              Invite
+            </DropdownMenuItem>
+            <DropdownMenuSeparator />
+            <DropdownMenuSub>
+              <DropdownMenuSubTrigger>
+                <Share2 className="h-4 w-4 mr-2" />
+                Share
+              </DropdownMenuSubTrigger>
+              <DropdownMenuSubContent>
+                <DropdownMenuItem onClick={handleShareEmail}>
+                  <Mail className="h-4 w-4 mr-2" />
+                  Share via Email
+                </DropdownMenuItem>
+                <DropdownMenuItem onClick={handleCopyLink}>
+                  <Link2 className="h-4 w-4 mr-2" />
+                  Copy Link
+                </DropdownMenuItem>
+              </DropdownMenuSubContent>
+            </DropdownMenuSub>
+            <DropdownMenuItem onClick={handleExportPDF}>
+              <FileDown className="h-4 w-4 mr-2" />
+              Export PDF
+            </DropdownMenuItem>
+            <DropdownMenuSeparator />
+            <DropdownMenuItem>
+              <Pencil className="h-4 w-4 mr-2" />
+              Rename
+            </DropdownMenuItem>
+            <DropdownMenuItem>
+              <Archive className="h-4 w-4 mr-2" />
+              Archive
+            </DropdownMenuItem>
+            <DropdownMenuItem className="text-destructive">
+              <Trash2 className="h-4 w-4 mr-2" />
+              Delete
+            </DropdownMenuItem>
+          </DropdownMenuContent>
+        </DropdownMenu>
+      </div>
 
       {/* Messages */}
       <div
@@ -719,15 +867,15 @@ export default function ChatPage() {
           onMouseDown={handleResizeStart}
           className="absolute left-0 top-0 bottom-0 w-1 cursor-col-resize hover:bg-primary/20 active:bg-primary/30 transition-colors z-10"
         />
-        <Suspense fallback={<div className="flex items-center justify-center h-full"><Loader2 className="h-6 w-6 animate-spin text-muted-foreground" /></div>}>
-          <DiscoveryCanvas
-            content={canvasContent || "# 🎯 Discovery Canvas\n\nNo canvas content yet. Ask Jarvis to analyze your project or create a synthesis document."}
-            status={canvasStatus}
-            onApprove={handleCanvasApprove}
-            onClose={handleCanvasClose}
-            onEditRequest={handleCanvasEditRequest}
-          />
-        </Suspense>
+        <DiscoveryCanvas
+          documents={canvasData?.documents || []}
+          activeDocumentId={activeDocumentId}
+          onDocumentSelect={handleDocumentSelect}
+          onApprove={handleCanvasApprove}
+          onVersionChange={handleVersionChange}
+          onDocumentClose={handleDocumentClose}
+          onClose={handleCanvasClose}
+        />
       </div>
     </div>
   )

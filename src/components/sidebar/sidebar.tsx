@@ -72,6 +72,7 @@ export function Sidebar({ isOpen = true, onToggle, className }: SidebarProps) {
                 <button
                   onClick={handleOpenSearch}
                   className="p-2.5 rounded-lg hover:bg-muted transition-colors text-foreground/70 hover:text-foreground"
+                  aria-label="Search chats"
                 >
                   <Search className="h-5 w-5" strokeWidth={1.75} />
                 </button>

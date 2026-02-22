@@ -29,6 +29,10 @@ export { StageCard } from "./stage-card"
 export { AgentCard } from "./agent-card"
 export { StatCard } from "./stat-card"
 
+// Diagrams
+export { ExcalidrawDiagram } from "./excalidraw-diagram"
+export { MermaidDiagram } from "./mermaid-diagram"
+
 // Status & Visual
 export { StatusBadge, type Status } from "./status-badge"
 export { StatusText, type StatusType } from "./status-text"
