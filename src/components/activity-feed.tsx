@@ -24,7 +24,7 @@ export function ActivityFeed({ activities, maxHeight = "300px" }: ActivityFeedPr
   }
 
   return (
-    <ScrollArea style={{ height: maxHeight }}>
+    <ScrollArea className={maxHeight ? `h-[${maxHeight}]` : "h-[400px]"}>
       <div className="divide-y">
         {activities.map((activity) => (
           <ActivityItem

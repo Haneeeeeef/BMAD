@@ -1,3 +1,4 @@
+import { memo } from "react"
 import { cn } from "@/lib/utils"
 
 type ActivityType = "started" | "progress" | "completed" | "error" | "question" | "human"
@@ -18,7 +19,7 @@ interface ActivityItemProps {
   message: string
 }
 
-export function ActivityItem({ timestamp, agent, type, message }: ActivityItemProps) {
+export const ActivityItem = memo(function ActivityItem({ timestamp, agent, type, message }: ActivityItemProps) {
   const config = typeConfig[type]
 
   return (
@@ -34,4 +35,4 @@ export function ActivityItem({ timestamp, agent, type, message }: ActivityItemPr
       </span>
     </div>
   )
-}
+})

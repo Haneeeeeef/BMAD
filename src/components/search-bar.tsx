@@ -1,11 +1,28 @@
 "use client"
 
 import * as React from "react"
+import { Search, X } from "lucide-react"
 import { cn } from "@/lib/utils"
+
+type SearchBarVariant = "default" | "hero"
 
 interface SearchBarProps extends Omit<React.InputHTMLAttributes<HTMLInputElement>, "onChange"> {
   onSearch?: (value: string) => void
   onChange?: (value: string) => void
+  variant?: SearchBarVariant
+}
+
+const variantStyles: Record<SearchBarVariant, { container: string; input: string; icon: string }> = {
+  default: {
+    container: "",
+    input: "h-10 pl-10 pr-10 text-sm rounded-lg border border-input",
+    icon: "h-4 w-4 left-3",
+  },
+  hero: {
+    container: "rounded-xl border border-border bg-background",
+    input: "h-12 pl-11 pr-11 text-base rounded-xl border-0 bg-transparent",
+    icon: "h-5 w-5 left-4",
+  },
 }
 
 export function SearchBar({
@@ -13,9 +30,11 @@ export function SearchBar({
   placeholder = "Search...",
   onSearch,
   onChange,
+  variant = "default",
   ...props
 }: SearchBarProps) {
   const [value, setValue] = React.useState("")
+  const styles = variantStyles[variant]
 
   const handleChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     const newValue = e.target.value
@@ -29,47 +48,48 @@ export function SearchBar({
     }
   }
 
+  const handleClear = () => {
+    setValue("")
+    onChange?.("")
+  }
+
   return (
-    <div className={cn("relative", className)}>
-      <svg
-        className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground"
-        fill="none"
-        stroke="currentColor"
-        viewBox="0 0 24 24"
-      >
-        <path
-          strokeLinecap="round"
-          strokeLinejoin="round"
-          strokeWidth={2}
-          d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z"
-        />
-      </svg>
+    <div className={cn("relative", styles.container, className)}>
+      <Search
+        className={cn(
+          "absolute top-1/2 -translate-y-1/2 text-muted-foreground/60",
+          styles.icon
+        )}
+        strokeWidth={1.75}
+      />
       <input
         type="search"
         value={value}
         onChange={handleChange}
         onKeyDown={handleKeyDown}
         placeholder={placeholder}
+        aria-label={placeholder}
         className={cn(
-          "flex h-10 w-full rounded-md border border-input bg-background pl-10 pr-3 py-2 text-[16px] md:text-sm",
-          "placeholder:text-muted-foreground",
-          "focus:outline-none focus:ring-1 focus:ring-ring focus:border-ring",
-          "disabled:cursor-not-allowed disabled:opacity-50"
+          "flex w-full bg-background",
+          "placeholder:text-muted-foreground/50",
+          "focus:outline-none focus:ring-0",
+          "disabled:cursor-not-allowed disabled:opacity-50",
+          "[&::-webkit-search-cancel-button]:hidden",
+          styles.input
         )}
         {...props}
       />
       {value && (
         <button
           type="button"
-          onClick={() => {
-            setValue("")
-            onChange?.("")
-          }}
-          className="absolute right-3 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground"
+          onClick={handleClear}
+          aria-label="Clear search"
+          className={cn(
+            "absolute top-1/2 -translate-y-1/2 text-muted-foreground/60 hover:text-foreground transition-colors",
+            variant === "hero" ? "right-4" : "right-3"
+          )}
         >
-          <svg className="h-4 w-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
-          </svg>
+          <X className={variant === "hero" ? "h-5 w-5" : "h-4 w-4"} strokeWidth={1.75} />
         </button>
       )}
     </div>

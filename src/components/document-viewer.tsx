@@ -85,17 +85,24 @@ export function DocumentViewer({
 }
 
 function MarkdownPreview({ content }: { content: string }) {
-  // Simple markdown rendering - in production use react-markdown
-  const html = content
-    .replace(/^### (.*$)/gim, '<h3>$1</h3>')
-    .replace(/^## (.*$)/gim, '<h2>$1</h2>')
-    .replace(/^# (.*$)/gim, '<h1>$1</h1>')
-    .replace(/\*\*(.*)\*\*/gim, '<strong>$1</strong>')
-    .replace(/\*(.*)\*/gim, '<em>$1</em>')
-    .replace(/`([^`]+)`/gim, '<code>$1</code>')
-    .replace(/\n/gim, '<br />')
+  // Safe markdown rendering - escapes HTML to prevent XSS
+  const escapeHtml = (text: string) =>
+    text.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;")
 
-  return <div dangerouslySetInnerHTML={{ __html: html }} />
+  const lines = content.split("\n")
+
+  return (
+    <div className="space-y-2">
+      {lines.map((line, i) => {
+        const escaped = escapeHtml(line)
+        if (line.startsWith("### ")) return <h3 key={i} className="text-lg font-semibold">{escaped.slice(4)}</h3>
+        if (line.startsWith("## ")) return <h2 key={i} className="text-xl font-semibold">{escaped.slice(3)}</h2>
+        if (line.startsWith("# ")) return <h1 key={i} className="text-2xl font-bold">{escaped.slice(2)}</h1>
+        if (!line.trim()) return <br key={i} />
+        return <p key={i}>{escaped}</p>
+      })}
+    </div>
+  )
 }
 
 function DocumentIcon({ language }: { language: string }) {

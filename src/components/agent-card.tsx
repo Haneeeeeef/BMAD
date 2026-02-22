@@ -1,3 +1,4 @@
+import { memo } from "react"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { StatusBadge, Status } from "@/components/status-badge"
 
@@ -9,7 +10,7 @@ interface AgentCardProps {
   tokensUsed?: number
 }
 
-export function AgentCard({
+export const AgentCard = memo(function AgentCard({
   name,
   role,
   status,
@@ -41,4 +42,4 @@ export function AgentCard({
       )}
     </Card>
   )
-}
+})

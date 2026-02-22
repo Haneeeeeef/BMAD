@@ -4,7 +4,7 @@ import { cn } from "@/lib/utils"
 export function BrandButton({ className, children, ...props }: ButtonProps) {
   return (
     <Button
-      className={cn("bg-blue-600 hover:bg-blue-700 text-white", className)}
+      className={cn("bg-[#00719c] hover:bg-[#00415a] text-white", className)}
       {...props}
     >
       {children}

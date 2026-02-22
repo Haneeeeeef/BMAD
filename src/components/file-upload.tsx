@@ -43,9 +43,9 @@ export function FileUpload({
     disabled,
   })
 
-  const removeFile = (index: number) => {
+  const removeFile = React.useCallback((index: number) => {
     setFiles((prev) => prev.filter((_, i) => i !== index))
-  }
+  }, [])
 
   const handleUpload = () => {
     if (files.length > 0) {
@@ -103,30 +103,12 @@ export function FileUpload({
           <p className="text-sm font-medium">Selected files:</p>
           <ul className="space-y-2">
             {files.map((file, index) => (
-              <li
+              <FileListItem
                 key={`${file.name}-${index}`}
-                className="flex items-center justify-between rounded-md border p-2"
-              >
-                <div className="flex items-center gap-2 min-w-0">
-                  <FileIcon type={file.type} />
-                  <div className="min-w-0">
-                    <p className="text-sm font-medium truncate">{file.name}</p>
-                    <p className="text-xs text-muted-foreground">
-                      {formatFileSize(file.size)}
-                    </p>
-                  </div>
-                </div>
-                <Button
-                  variant="ghost"
-                  size="icon"
-                  className="h-8 w-8 shrink-0"
-                  onClick={() => removeFile(index)}
-                >
-                  <svg className="h-4 w-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
-                  </svg>
-                </Button>
-              </li>
+                file={file}
+                index={index}
+                onRemove={removeFile}
+              />
             ))}
           </ul>
           <Button onClick={handleUpload} className="w-full">
@@ -162,3 +144,40 @@ function formatFileSize(bytes: number): string {
   const i = Math.floor(Math.log(bytes) / Math.log(k))
   return parseFloat((bytes / Math.pow(k, i)).toFixed(2)) + " " + sizes[i]
 }
+
+// Memoized file list item to prevent re-renders
+const FileListItem = React.memo(function FileListItem({
+  file,
+  index,
+  onRemove,
+}: {
+  file: File
+  index: number
+  onRemove: (index: number) => void
+}) {
+  const handleRemove = React.useCallback(() => onRemove(index), [onRemove, index])
+
+  return (
+    <li className="flex items-center justify-between rounded-md border p-2">
+      <div className="flex items-center gap-2 min-w-0">
+        <FileIcon type={file.type} />
+        <div className="min-w-0">
+          <p className="text-sm font-medium truncate">{file.name}</p>
+          <p className="text-xs text-muted-foreground">
+            {formatFileSize(file.size)}
+          </p>
+        </div>
+      </div>
+      <Button
+        variant="ghost"
+        size="icon"
+        className="h-8 w-8 shrink-0"
+        onClick={handleRemove}
+      >
+        <svg className="h-4 w-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+        </svg>
+      </Button>
+    </li>
+  )
+})

@@ -61,7 +61,7 @@ export function TopNav() {
         <div className="flex items-center gap-3">
           <DropdownMenu>
             <DropdownMenuTrigger asChild>
-              <button className="flex items-center gap-2 rounded-full focus:outline-none focus:ring-2 focus:ring-ring focus:ring-offset-2">
+              <button aria-label="User menu" className="flex items-center gap-2 rounded-full focus:outline-none focus:ring-2 focus:ring-ring focus:ring-offset-2">
                 <Avatar className="h-8 w-8">
                   <AvatarFallback className="text-xs">U</AvatarFallback>
                 </Avatar>

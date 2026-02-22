@@ -38,6 +38,12 @@ export function DataTable<TData, TValue>({
 }: DataTableProps<TData, TValue>) {
   const [sorting, setSorting] = React.useState<SortingState>([])
 
+  // Memoized row click handler factory
+  const createRowClickHandler = React.useCallback(
+    (row: TData) => () => onRowClick?.(row),
+    [onRowClick]
+  )
+
   const table = useReactTable({
     data,
     columns,
@@ -48,6 +54,10 @@ export function DataTable<TData, TValue>({
     state: { sorting },
     initialState: { pagination: { pageSize } },
   })
+
+  // Memoized pagination handlers
+  const handlePreviousPage = React.useCallback(() => table.previousPage(), [table])
+  const handleNextPage = React.useCallback(() => table.nextPage(), [table])
 
   if (loading) {
     return <DataTableSkeleton columns={columns.length} rows={pageSize} />
@@ -95,7 +105,7 @@ export function DataTable<TData, TValue>({
                   key={row.id}
                   data-state={row.getIsSelected() && "selected"}
                   className={cn(onRowClick && "cursor-pointer")}
-                  onClick={() => onRowClick?.(row.original)}
+                  onClick={onRowClick ? createRowClickHandler(row.original) : undefined}
                 >
                   {row.getVisibleCells().map((cell) => (
                     <TableCell key={cell.id}>
@@ -122,7 +132,7 @@ export function DataTable<TData, TValue>({
           <Button
             variant="outline"
             size="sm"
-            onClick={() => table.previousPage()}
+            onClick={handlePreviousPage}
             disabled={!table.getCanPreviousPage()}
           >
             Previous
@@ -130,7 +140,7 @@ export function DataTable<TData, TValue>({
           <Button
             variant="outline"
             size="sm"
-            onClick={() => table.nextPage()}
+            onClick={handleNextPage}
             disabled={!table.getCanNextPage()}
           >
             Next

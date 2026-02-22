@@ -1,5 +1,6 @@
 "use client"
 
+import * as React from "react"
 import Link from "next/link"
 import { usePathname } from "next/navigation"
 import { cn } from "@/lib/utils"
@@ -25,7 +26,7 @@ type SidebarItemButtonProps = SidebarItemBaseProps & {
 
 type SidebarItemProps = SidebarItemLinkProps | SidebarItemButtonProps
 
-export function SidebarItem(props: SidebarItemProps) {
+export const SidebarItem = React.memo(function SidebarItem(props: SidebarItemProps) {
   const { icon: Icon, children, className } = props
   const pathname = usePathname()
 
@@ -44,7 +45,11 @@ export function SidebarItem(props: SidebarItemProps) {
 
   if (props.as === "button") {
     return (
-      <button onClick={props.onClick} className={baseClasses}>
+      <button
+        onClick={props.onClick}
+        aria-label={typeof children === "string" ? children : undefined}
+        className={baseClasses}
+      >
         {content}
       </button>
     )
@@ -63,4 +68,4 @@ export function SidebarItem(props: SidebarItemProps) {
       {content}
     </Link>
   )
-}
+})

@@ -34,6 +34,24 @@ const defaultFormats: ExportOption[] = [
   { format: "zip", label: "Download as ZIP" },
 ]
 
+// Memoized export menu item
+const ExportMenuItem = React.memo(function ExportMenuItem({
+  option,
+  onExport,
+}: {
+  option: ExportOption
+  onExport: (format: ExportFormat) => void
+}) {
+  const handleClick = React.useCallback(() => onExport(option.format), [onExport, option.format])
+
+  return (
+    <DropdownMenuItem onClick={handleClick}>
+      <FormatIcon format={option.format} className="mr-2 h-4 w-4" />
+      {option.label}
+    </DropdownMenuItem>
+  )
+})
+
 export function ExportButton({
   onExport,
   formats = defaultFormats,
@@ -43,13 +61,19 @@ export function ExportButton({
   size = "default",
   className,
 }: ExportButtonProps) {
+  // Memoized single format export handler
+  const handleSingleExport = React.useCallback(
+    () => onExport(formats[0].format),
+    [onExport, formats]
+  )
+
   if (formats.length === 1) {
     return (
       <Button
         variant={variant}
         size={size}
         disabled={disabled || loading}
-        onClick={() => onExport(formats[0].format)}
+        onClick={handleSingleExport}
         className={className}
       >
         {loading ? (
@@ -84,13 +108,7 @@ export function ExportButton({
       </DropdownMenuTrigger>
       <DropdownMenuContent align="end">
         {formats.map((option) => (
-          <DropdownMenuItem
-            key={option.format}
-            onClick={() => onExport(option.format)}
-          >
-            <FormatIcon format={option.format} className="mr-2 h-4 w-4" />
-            {option.label}
-          </DropdownMenuItem>
+          <ExportMenuItem key={option.format} option={option} onExport={onExport} />
         ))}
       </DropdownMenuContent>
     </DropdownMenu>

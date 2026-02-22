@@ -7,12 +7,10 @@ export { SearchBar } from "./search-bar"
 export { MultiSelect } from "./multi-select"
 export { FilterSelect } from "./filter-select"
 export { FileUpload } from "./file-upload"
-export { PromptBox } from "./prompt-box"
-export { ChatInput } from "./chat-input"
+export { ChatInput, type ChatInputHandle } from "./chat-input"
 
 // Buttons
 export { BrandButton } from "./brand-button"
-export { SuggestionChip } from "./suggestion-chip"
 
 // Search
 export { ChatSearch, type SearchItem } from "./chat-search"
@@ -27,7 +25,6 @@ export { ActivityFeed } from "./activity-feed"
 export { ActivityItem } from "./activity-item"
 
 // Cards
-export { ProjectCard } from "./project-card"
 export { StageCard } from "./stage-card"
 export { AgentCard } from "./agent-card"
 export { StatCard } from "./stat-card"
@@ -44,6 +41,7 @@ export { ExportButton } from "./export-button"
 export { TopNav } from "./top-nav"
 export { PageHeader } from "./page-header"
 export { Sidebar, SidebarItem, SidebarSection } from "./sidebar"
+export { TabNav, type Tab } from "./tab-nav"
 
 // Modals & Dialogs
 export { ResponsiveModal } from "./responsive-modal"
@@ -60,6 +58,18 @@ export {
   StatsSkeleton,
   PageSkeleton,
 } from "./skeleton-card"
+
+// Chat
+export { ChatMessage } from "./chat-message"
+
+// Canvas
+export { DiscoveryCanvas } from "./discovery-canvas"
+export { CanvasStatusBadge } from "./canvas-status-badge"
+export { CanvasSectionNav } from "./canvas-section-nav"
+
+// App Shell & Error Handling
+export { AppShell } from "./app-shell"
+export { ErrorBoundary } from "./error-boundary"
 
 // Toast helper
 export { toast } from "sonner"

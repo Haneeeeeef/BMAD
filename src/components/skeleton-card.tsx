@@ -33,8 +33,7 @@ export function SkeletonCard({
           {Array.from({ length: lines }).map((_, i) => (
             <Skeleton
               key={i}
-              className="h-4"
-              style={{ width: `${Math.random() * 40 + 60}%` }}
+              className={`h-4 ${i % 3 === 0 ? "w-full" : i % 3 === 1 ? "w-4/5" : "w-3/5"}`}
             />
           ))}
         </div>

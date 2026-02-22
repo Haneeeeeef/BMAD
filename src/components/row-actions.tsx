@@ -22,7 +22,10 @@ export function RowActions({ actions }: RowActionsProps) {
   return (
     <DropdownMenu>
       <DropdownMenuTrigger asChild>
-        <button className="p-1.5 rounded-md opacity-0 group-hover:opacity-100 hover:bg-muted transition-opacity">
+        <button
+          className="p-1.5 rounded-md opacity-0 group-hover:opacity-100 hover:bg-muted transition-opacity"
+          aria-label="More actions"
+        >
           <MoreHorizontal className="h-3.5 w-3.5 text-muted-foreground" />
         </button>
       </DropdownMenuTrigger>

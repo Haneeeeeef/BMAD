@@ -1,153 +1,164 @@
 "use client"
 
-import { useState } from "react"
+import { useState, useCallback } from "react"
 import Link from "next/link"
-import { SearchBar, StageBadge, StatusText, FilterSelect, BrandButton, RowActions, ResponsiveModal } from "@/components"
+import { SearchBar, StageBadge, StatusText, FilterSelect, BrandButton, TabNav, ResponsiveModal } from "@/components"
 import { mockProjects } from "@/lib/mock-data"
 import { Button } from "@/components/ui/button"
-import { Plus, SlidersHorizontal } from "lucide-react"
+import { Plus, SlidersHorizontal, ChevronRight } from "lucide-react"
 
 const clients = ["All Clients", ...new Set(mockProjects.map(p => p.client))]
 const stages = ["All Stages", "Research", "PRFAQ", "Requirements", "UI Design", "Architecture", "Stories", "Scaffold", "DevOps", "QA", "Documentation"]
-const statuses = ["All Statuses", "In Progress", "Waiting Approval", "Blocked", "Completed", "Not Started"]
+
+const tabs = [
+  { id: "all", label: "All Projects" },
+  { id: "active", label: "Active" },
+  { id: "completed", label: "Completed" },
+  { id: "archived", label: "Archived" },
+]
 
 export default function ProjectsPage() {
   const [search, setSearch] = useState("")
+  const [activeTab, setActiveTab] = useState("all")
   const [clientFilter, setClientFilter] = useState("All Clients")
   const [stageFilter, setStageFilter] = useState("All Stages")
-  const [statusFilter, setStatusFilter] = useState("All Statuses")
   const [filtersOpen, setFiltersOpen] = useState(false)
+
+  // Memoized handlers
+  const handleOpenFilters = useCallback(() => setFiltersOpen(true), [])
+  const handleCloseFilters = useCallback(() => setFiltersOpen(false), [])
 
   const filtered = mockProjects.filter((p) => {
     const matchesSearch = p.name.toLowerCase().includes(search.toLowerCase())
     const matchesClient = clientFilter === "All Clients" || p.client === clientFilter
     const matchesStage = stageFilter === "All Stages" || p.currentStage === stageFilter
-    const matchesStatus = statusFilter === "All Statuses" ||
-      (statusFilter === "In Progress" && p.status === "running") ||
-      (statusFilter === "Waiting Approval" && p.status === "waiting") ||
-      (statusFilter === "Blocked" && p.status === "error") ||
-      (statusFilter === "Completed" && p.status === "completed") ||
-      (statusFilter === "Not Started" && p.status === "pending")
-    return matchesSearch && matchesClient && matchesStage && matchesStatus
+    const matchesTab =
+      activeTab === "all" ||
+      (activeTab === "active" && (p.status === "running" || p.status === "waiting" || p.status === "pending")) ||
+      (activeTab === "completed" && p.status === "completed") ||
+      (activeTab === "archived" && p.status === "error")
+    return matchesSearch && matchesClient && matchesStage && matchesTab
   })
 
-  const activeFilters = [clientFilter, stageFilter, statusFilter].filter(f => !f.startsWith("All")).length
+  const activeFilters = [clientFilter, stageFilter].filter(f => !f.startsWith("All")).length
 
   return (
-    <div className="p-4 md:p-6 max-w-5xl mx-auto">
-      {/* Header */}
-      <div className="flex items-center justify-between mb-4">
-        <h1 className="text-xl sm:text-2xl font-semibold">Projects</h1>
+    <div className="flex flex-col h-full">
+      {/* Top Header Bar */}
+      <div className="flex items-center justify-between px-4 md:px-6 py-3">
+        <span className="text-lg font-medium">Explore Projects</span>
         <Link href="/new">
-          <BrandButton size="default" className="h-10">
-            <Plus className="h-4 w-4 mr-1" />
-            Create Project
+          <BrandButton size="sm" className="h-8 gap-1.5 rounded-full px-4">
+            <Plus className="h-3.5 w-3.5" />
+            Create
           </BrandButton>
         </Link>
       </div>
 
-      {/* Search + Filters */}
-      <div className="flex gap-3 mb-4">
-        <SearchBar
-          placeholder="Search projects..."
-          onChange={setSearch}
-          className="flex-1"
-        />
-        {/* Mobile: Filters button */}
-        <Button
-          variant="outline"
-          size="default"
-          className="sm:hidden h-10"
-          onClick={() => setFiltersOpen(true)}
+      {/* Content */}
+      <div className="flex-1 overflow-auto">
+        {/* Hero Section */}
+        <div className="text-center pt-8 pb-6 px-4">
+          <h1 className="text-5xl font-semibold mb-3">Projects</h1>
+          <p className="text-lg text-muted-foreground max-w-xl mx-auto">
+            Build and manage AI-powered development projects with automated workflows, from ideation to deployment.
+          </p>
+        </div>
+
+        {/* Centered Search */}
+        <div className="max-w-2xl mx-auto px-4 mb-6">
+          <SearchBar
+            placeholder="Search projects..."
+            onChange={setSearch}
+            variant="hero"
+            className="w-full"
+          />
+        </div>
+
+        {/* Tab Navigation */}
+        <div className="max-w-5xl mx-auto px-4 md:px-6 mb-6">
+          <TabNav
+            tabs={tabs}
+            activeTab={activeTab}
+            onTabChange={setActiveTab}
+          >
+            {/* Desktop filters */}
+            <div className="hidden sm:flex items-center gap-2">
+              <FilterSelect value={clientFilter} onValueChange={setClientFilter} options={clients} />
+              <FilterSelect value={stageFilter} onValueChange={setStageFilter} options={stages} />
+            </div>
+            {/* Mobile filter button */}
+            <Button
+              variant="ghost"
+              size="sm"
+              className="sm:hidden"
+              onClick={handleOpenFilters}
+            >
+              <SlidersHorizontal className="h-4 w-4" />
+              {activeFilters > 0 && (
+                <span className="ml-1 bg-primary text-primary-foreground text-xs rounded-full h-4 w-4 flex items-center justify-center">
+                  {activeFilters}
+                </span>
+              )}
+            </Button>
+          </TabNav>
+        </div>
+
+        {/* Mobile Filters Drawer */}
+        <ResponsiveModal
+          open={filtersOpen}
+          onOpenChange={setFiltersOpen}
+          title="Filters"
         >
-          <SlidersHorizontal className="h-4 w-4 mr-2" />
-          Filters
-          {activeFilters > 0 && (
-            <span className="ml-1 bg-primary text-primary-foreground text-xs rounded-full h-5 w-5 flex items-center justify-center">
-              {activeFilters}
-            </span>
-          )}
-        </Button>
-        {/* Desktop: Inline filters */}
-        <div className="hidden sm:flex gap-2">
-          <FilterSelect value={clientFilter} onValueChange={setClientFilter} options={clients} />
-          <FilterSelect value={stageFilter} onValueChange={setStageFilter} options={stages} />
-          <FilterSelect value={statusFilter} onValueChange={setStatusFilter} options={statuses} />
-        </div>
-      </div>
+          <div className="space-y-4">
+            <div>
+              <label className="text-xs text-muted-foreground mb-1 block">Client</label>
+              <FilterSelect value={clientFilter} onValueChange={setClientFilter} options={clients} className="w-full" />
+            </div>
+            <div>
+              <label className="text-xs text-muted-foreground mb-1 block">Stage</label>
+              <FilterSelect value={stageFilter} onValueChange={setStageFilter} options={stages} className="w-full" />
+            </div>
+            <BrandButton className="w-full" onClick={handleCloseFilters}>Apply Filters</BrandButton>
+          </div>
+        </ResponsiveModal>
 
-      {/* Mobile Filters Drawer */}
-      <ResponsiveModal
-        open={filtersOpen}
-        onOpenChange={setFiltersOpen}
-        title="Filters"
-      >
-        <div className="space-y-4">
-          <div>
-            <label className="text-xs text-muted-foreground mb-1 block">Client</label>
-            <FilterSelect value={clientFilter} onValueChange={setClientFilter} options={clients} className="w-full" />
-          </div>
-          <div>
-            <label className="text-xs text-muted-foreground mb-1 block">Stage</label>
-            <FilterSelect value={stageFilter} onValueChange={setStageFilter} options={stages} className="w-full" />
-          </div>
-          <div>
-            <label className="text-xs text-muted-foreground mb-1 block">Status</label>
-            <FilterSelect value={statusFilter} onValueChange={setStatusFilter} options={statuses} className="w-full" />
-          </div>
-          <BrandButton className="w-full" onClick={() => setFiltersOpen(false)}>Apply Filters</BrandButton>
-        </div>
-      </ResponsiveModal>
-
-      {/* Table Container - scrollable on mobile */}
-      <div className="overflow-x-auto border rounded-lg">
-        <div className="min-w-[640px]">
-          {/* Column Headers */}
-          <div className="grid grid-cols-[70px_1fr_100px_100px_70px_100px_40px] gap-4 px-4 py-2 text-xs text-muted-foreground border-b bg-muted/30">
-            <span>Code</span>
-            <span>Project</span>
-            <span>Client</span>
-            <span className="text-center">Stage</span>
-            <span className="text-center">Progress</span>
-            <span className="text-center">Status</span>
-            <span></span>
-          </div>
-
-          {/* Project List */}
-          <div className="divide-y">
-            {filtered.length === 0 ? (
-              <div className="p-8 text-center text-muted-foreground text-xs">
-                No projects found
-              </div>
-            ) : (
-              filtered.map((project) => (
-                <div
+        {/* Projects List */}
+        <div className="max-w-5xl mx-auto px-4 md:px-6 pb-8">
+          {filtered.length === 0 ? (
+            <div className="py-16 text-center">
+              <p className="text-muted-foreground">No projects found</p>
+            </div>
+          ) : (
+            <div className="space-y-2">
+              {filtered.map((project) => (
+                <Link
                   key={project.id}
-                  className="group grid grid-cols-[70px_1fr_100px_100px_70px_100px_40px] gap-4 items-center p-4 hover:bg-muted/50 transition-colors text-xs"
+                  href={`/projects/${project.id}`}
+                  className="group flex items-center gap-4 p-4 rounded-xl border border-transparent hover:border-border hover:bg-muted/30 transition-all"
                 >
-                  <Link href={`/projects/${project.id}`} className="text-muted-foreground font-mono">{project.code}</Link>
-                  <Link href={`/projects/${project.id}`} className="truncate">{project.name}</Link>
-                  <Link href={`/projects/${project.id}`} className="text-muted-foreground truncate">{project.client}</Link>
-                  <Link href={`/projects/${project.id}`} className="text-center">
-                    <StageBadge stage={project.currentStage} />
-                  </Link>
-                  <Link href={`/projects/${project.id}`} className="text-center text-muted-foreground">{project.progress}%</Link>
-                  <Link href={`/projects/${project.id}`} className="flex justify-center">
-                    <StatusText status={project.status} />
-                  </Link>
-                  <div className="flex justify-center">
-                    <RowActions
-                      actions={[
-                        { label: "Edit" },
-                        { label: "Put on Hold" },
-                        { label: "Archive", variant: "danger", separator: true },
-                      ]}
-                    />
+                  {/* Project Info */}
+                  <div className="flex-1 min-w-0">
+                    <div className="flex items-center gap-3 mb-1">
+                      <span className="font-medium truncate">{project.name}</span>
+                      <StageBadge stage={project.currentStage} />
+                    </div>
+                    <div className="flex items-center gap-4 text-sm text-muted-foreground">
+                      <span className="font-mono text-xs">{project.code}</span>
+                      <span>{project.client}</span>
+                      <span>{project.progress}% complete</span>
+                    </div>
                   </div>
-                </div>
-              ))
-            )}
-          </div>
+
+                  {/* Status */}
+                  <StatusText status={project.status} />
+
+                  {/* Arrow */}
+                  <ChevronRight className="h-4 w-4 text-muted-foreground/50 opacity-0 group-hover:opacity-100 transition-opacity" />
+                </Link>
+              ))}
+            </div>
+          )}
         </div>
       </div>
     </div>

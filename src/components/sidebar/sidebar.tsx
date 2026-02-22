@@ -1,14 +1,16 @@
 "use client"
 
-import { useState } from "react"
+import { useState, useCallback } from "react"
 import Link from "next/link"
 import { cn } from "@/lib/utils"
 import { Avatar, AvatarFallback } from "@/components/ui/avatar"
 import { SidebarItem } from "./sidebar-item"
 import { SidebarSection } from "./sidebar-section"
 import { ChatSearch, type SearchItem } from "@/components"
-import { PenSquare, Search, FolderKanban, Settings, PanelLeftClose } from "lucide-react"
+import { PenSquare, Search, FolderKanban, Settings, PanelLeftClose, PanelLeft } from "lucide-react"
 import { mockProjects } from "@/lib/mock-data"
+import { useChatContext } from "@/contexts/chat-context"
+import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip"
 
 interface SidebarProps {
   isOpen?: boolean
@@ -18,6 +20,10 @@ interface SidebarProps {
 
 export function Sidebar({ isOpen = true, onToggle, className }: SidebarProps) {
   const [searchOpen, setSearchOpen] = useState(false)
+  const { sessions } = useChatContext()
+
+  // Memoized handler to open search
+  const handleOpenSearch = useCallback(() => setSearchOpen(true), [])
 
   // Convert projects to search items
   const searchItems: SearchItem[] = mockProjects.map((project) => ({
@@ -26,12 +32,104 @@ export function Sidebar({ isOpen = true, onToggle, className }: SidebarProps) {
     href: `/projects/${project.id}`,
   }))
 
+  // Collapsed state - icon only sidebar
+  if (!isOpen) {
+    return (
+      <>
+        <aside
+          className={cn(
+            "flex flex-col h-full bg-muted/30 border-r w-14 shrink-0",
+            "transition-all duration-200",
+            className
+          )}
+        >
+          {/* Logo */}
+          <div className="flex items-center justify-center pt-3 pb-1">
+            <Link
+              href="/new"
+              className="h-8 w-8 rounded-lg bg-[#00415a] flex items-center justify-center hover:opacity-90 transition-opacity"
+            >
+              <span className="text-white font-bold text-sm">M</span>
+            </Link>
+          </div>
+
+          {/* Icon Navigation */}
+          <div className="flex flex-col items-center pt-4 space-y-1">
+            <Tooltip>
+              <TooltipTrigger asChild>
+                <Link
+                  href="/new"
+                  className="p-2.5 rounded-lg hover:bg-muted transition-colors text-foreground/70 hover:text-foreground"
+                >
+                  <PenSquare className="h-5 w-5" strokeWidth={1.75} />
+                </Link>
+              </TooltipTrigger>
+              <TooltipContent side="right">New project</TooltipContent>
+            </Tooltip>
+
+            <Tooltip>
+              <TooltipTrigger asChild>
+                <button
+                  onClick={handleOpenSearch}
+                  className="p-2.5 rounded-lg hover:bg-muted transition-colors text-foreground/70 hover:text-foreground"
+                >
+                  <Search className="h-5 w-5" strokeWidth={1.75} />
+                </button>
+              </TooltipTrigger>
+              <TooltipContent side="right">Search</TooltipContent>
+            </Tooltip>
+
+            <Tooltip>
+              <TooltipTrigger asChild>
+                <Link
+                  href="/projects"
+                  className="p-2.5 rounded-lg hover:bg-muted transition-colors text-foreground/70 hover:text-foreground"
+                >
+                  <FolderKanban className="h-5 w-5" strokeWidth={1.75} />
+                </Link>
+              </TooltipTrigger>
+              <TooltipContent side="right">Projects</TooltipContent>
+            </Tooltip>
+          </div>
+
+          {/* Spacer */}
+          <div className="flex-1" />
+
+          {/* Footer - User Avatar */}
+          <div className="p-2 border-t border-border/40">
+            <Tooltip>
+              <TooltipTrigger asChild>
+                <Link
+                  href="/settings"
+                  className="flex items-center justify-center p-1.5 rounded-lg hover:bg-muted transition-colors"
+                >
+                  <Avatar className="h-8 w-8">
+                    <AvatarFallback className="text-xs bg-orange-500 text-white">HS</AvatarFallback>
+                  </Avatar>
+                </Link>
+              </TooltipTrigger>
+              <TooltipContent side="right">Settings</TooltipContent>
+            </Tooltip>
+          </div>
+        </aside>
+
+        {/* Search Dialog */}
+        <ChatSearch
+          items={searchItems}
+          open={searchOpen}
+          onOpenChange={setSearchOpen}
+          placeholder="Search projects..."
+        />
+      </>
+    )
+  }
+
+  // Expanded state
   return (
     <>
       <aside
         className={cn(
-          "flex flex-col h-full bg-muted/30 border-r",
-          isOpen ? "w-64" : "w-0 overflow-hidden",
+          "flex flex-col h-full bg-muted/30 border-r w-64 shrink-0",
           "transition-all duration-200",
           className
         )}
@@ -39,14 +137,15 @@ export function Sidebar({ isOpen = true, onToggle, className }: SidebarProps) {
         {/* Header */}
         <div className="flex items-center justify-between px-3 pt-3 pb-1">
           <Link href="/new" className="flex items-center gap-2">
-            <div className="h-8 w-8 rounded-lg bg-blue-600 flex items-center justify-center">
+            <div className="h-8 w-8 rounded-lg bg-[#00415a] flex items-center justify-center">
               <span className="text-white font-bold text-sm">M</span>
             </div>
           </Link>
           {onToggle && (
             <button
               onClick={onToggle}
-              className="p-2 rounded-lg hover:bg-muted transition-colors"
+              aria-label="Collapse sidebar"
+              className="p-2 rounded-lg hover:bg-muted transition-colors text-muted-foreground hover:text-foreground"
             >
               <PanelLeftClose className="h-4 w-4" strokeWidth={1.75} />
             </button>
@@ -56,25 +155,27 @@ export function Sidebar({ isOpen = true, onToggle, className }: SidebarProps) {
         {/* Navigation */}
         <div className="px-2 pt-4 space-y-0.5">
           <SidebarItem href="/new" icon={PenSquare}>
-            New chat
+            New project
           </SidebarItem>
-          <SidebarItem as="button" icon={Search} onClick={() => setSearchOpen(true)}>
-            Search chats
+          <SidebarItem as="button" icon={Search} onClick={handleOpenSearch}>
+            Search projects
           </SidebarItem>
           <SidebarItem href="/projects" icon={FolderKanban}>
             Projects
           </SidebarItem>
         </div>
 
-        {/* Chats list */}
+        {/* In Progress Projects */}
         <div className="flex-1 overflow-y-auto px-2 pb-3">
-          <SidebarSection title="Your projects">
-            {mockProjects.map((project) => (
-              <SidebarItem key={project.id} href={`/projects/${project.id}`}>
-                {project.name}
-              </SidebarItem>
-            ))}
-          </SidebarSection>
+          {sessions.length > 0 && (
+            <SidebarSection title="In Progress Projects">
+              {sessions.map((session) => (
+                <SidebarItem key={session.id} href={`/chat/${session.id}`}>
+                  {session.title}
+                </SidebarItem>
+              ))}
+            </SidebarSection>
+          )}
         </div>
 
         {/* Footer - User */}
@@ -99,7 +200,7 @@ export function Sidebar({ isOpen = true, onToggle, className }: SidebarProps) {
         items={searchItems}
         open={searchOpen}
         onOpenChange={setSearchOpen}
-        placeholder="Search chats..."
+        placeholder="Search projects..."
       />
     </>
   )
