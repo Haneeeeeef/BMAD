@@ -160,8 +160,14 @@ export function getAgentCompletionsSummary(sessionId: string): string | null {
 }
 
 // Combined context for system prompt (canvas + completions)
-export function getSessionContext(sessionId: string): string | null {
+export function getSessionContext(sessionId: string, canvasUrl?: string): string {
   const parts: string[] = []
+
+  // Always include session info so Jarvis can push to canvas
+  parts.push(`[Session: ${sessionId}]`)
+  if (canvasUrl) {
+    parts.push(`[Canvas URL: ${canvasUrl}]`)
+  }
 
   const canvasStatus = getCanvasStatusSummary(sessionId)
   if (canvasStatus) parts.push(canvasStatus)
@@ -169,5 +175,5 @@ export function getSessionContext(sessionId: string): string | null {
   const completions = getAgentCompletionsSummary(sessionId)
   if (completions) parts.push(completions)
 
-  return parts.length > 0 ? parts.join("\n") : null
+  return parts.join("\n")
 }

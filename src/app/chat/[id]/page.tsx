@@ -14,6 +14,38 @@ const DiscoveryCanvas = lazy(() =>
 )
 import { CanvasStatus } from "@/lib/canvas-types"
 import { loadCanvas, saveCanvas, approveCanvas, getSessionContext, type CanvasData } from "@/lib/canvas-storage"
+
+// Parse artifact tag attributes
+function parseArtifactAttributes(attrString: string): Record<string, string> {
+  const attrs: Record<string, string> = {}
+  const attrRegex = /(\w+)="([^"]*)"/g
+  let match
+  while ((match = attrRegex.exec(attrString)) !== null) {
+    attrs[match[1]] = match[2]
+  }
+  return attrs
+}
+
+// Extract artifact from content and return artifact data + cleaned content
+function extractArtifact(content: string): { artifact: { attrs: Record<string, string>; content: string } | null; cleanedContent: string } {
+  const artifactRegex = /<artifact\s+([^>]*)>([\s\S]*?)<\/artifact>/gi
+  const match = artifactRegex.exec(content)
+
+  if (!match) {
+    return { artifact: null, cleanedContent: content }
+  }
+
+  const attrs = parseArtifactAttributes(match[1])
+  const artifactContent = match[2].trim()
+
+  // Replace artifact tag with a placeholder message
+  const cleanedContent = content.replace(artifactRegex, '\n\n*[Canvas document created - see sidebar]*\n\n').trim()
+
+  return {
+    artifact: { attrs, content: artifactContent },
+    cleanedContent
+  }
+}
 import { useSidebar } from "@/components/app-shell"
 import {
   DropdownMenu,
@@ -235,7 +267,8 @@ export default function ChatPage() {
       abortControllerRef.current = new AbortController()
 
       // Get session context (canvas + agent completions) to inject into Jarvis
-      const sessionContext = getSessionContext(sessionId)
+      const canvasUrl = `${window.location.origin}/api/canvas`
+      const sessionContext = getSessionContext(sessionId, canvasUrl)
 
       const response = await fetch("/api/chat", {
         method: "POST",
@@ -245,7 +278,7 @@ export default function ChatPage() {
             role: m.role,
             content: m.content,
           })),
-          canvasStatus: sessionContext || undefined,
+          canvasStatus: sessionContext,
         }),
         signal: abortControllerRef.current.signal,
       })
@@ -305,7 +338,25 @@ export default function ChatPage() {
       // Final update to ensure all content is rendered
       updateContent(true)
 
-      // Save final messages to session
+      // Check for canvas content in response (XML artifact tags)
+      const { artifact, cleanedContent } = extractArtifact(fullContent)
+      if (artifact) {
+        const status = (artifact.attrs.status as CanvasStatus) || "awaiting_approval"
+        setCanvasContent(artifact.content)
+        setCanvasStatus(status)
+        setShowCanvas(true)
+        saveCanvas({
+          sessionId,
+          content: artifact.content,
+          status,
+          createdAt: Date.now(),
+          updatedAt: Date.now(),
+        })
+        // Update fullContent to show cleaned version
+        fullContent = cleanedContent
+      }
+
+      // Save final messages to session (with artifact tags stripped)
       const finalMessages = [...currentMessages, { ...assistantMessage, content: fullContent }]
       updateSession(sessionId, { messages: finalMessages })
 
@@ -373,7 +424,8 @@ export default function ChatPage() {
         abortControllerRef.current = new AbortController()
 
         // Get session context (canvas + agent completions) to inject into Jarvis
-        const sessionContext = getSessionContext(sessionId)
+        const canvasUrl = `${window.location.origin}/api/canvas`
+        const sessionContext = getSessionContext(sessionId, canvasUrl)
 
         const response = await fetch("/api/chat", {
           method: "POST",
@@ -384,7 +436,7 @@ export default function ChatPage() {
               content: m.content,
               attachments: m.attachments,
             })),
-            canvasStatus: sessionContext || undefined,
+            canvasStatus: sessionContext,
           }),
           signal: abortControllerRef.current.signal,
         })
@@ -444,7 +496,26 @@ export default function ChatPage() {
         // Final update to ensure all content is rendered
         updateContent(true)
 
-        // Save final messages to session
+        // Check for canvas content in response
+        // Check for canvas content in response (XML artifact tags)
+        const { artifact, cleanedContent } = extractArtifact(fullContent)
+        if (artifact) {
+          const status = (artifact.attrs.status as CanvasStatus) || "awaiting_approval"
+          setCanvasContent(artifact.content)
+          setCanvasStatus(status)
+          setShowCanvas(true)
+          saveCanvas({
+            sessionId,
+            content: artifact.content,
+            status,
+            createdAt: Date.now(),
+            updatedAt: Date.now(),
+          })
+          // Update fullContent to show cleaned version
+          fullContent = cleanedContent
+        }
+
+        // Save final messages to session (with artifact tags stripped)
         const finalMessages = [...messages, userMessage, { ...assistantMessage, content: fullContent }]
         updateSession(sessionId, { messages: finalMessages })
 
