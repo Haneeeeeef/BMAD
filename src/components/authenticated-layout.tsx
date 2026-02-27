@@ -23,8 +23,10 @@ export function AuthenticatedLayout({ children }: { children: React.ReactNode })
   }
 
   // Full-screen pages (no sidebar)
+  // NOTE: Sidebar temporarily hidden globally - keep code for future projects
   const isProjectDetail = pathname.startsWith("/projects/") && pathname !== "/projects"
   const isMissionDetail = pathname.startsWith("/missions/") && pathname !== "/missions"
+  const HIDE_SIDEBAR_GLOBALLY = true  // Set to false to re-enable sidebar
 
-  return <AppShell hideSidebar={isProjectDetail || isMissionDetail}>{children}</AppShell>
+  return <AppShell hideSidebar={HIDE_SIDEBAR_GLOBALLY || isProjectDetail || isMissionDetail}>{children}</AppShell>
 }

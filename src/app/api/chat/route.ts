@@ -232,24 +232,38 @@ export async function POST(request: Request) {
       headers["x-openclaw-session-key"] = `agent:jarvis:mc:${username}`
     }
 
-    const response = await fetch(
-      `${openclawUrl}/v1/chat/completions`,
-      {
-        method: "POST",
-        headers,
-        body: JSON.stringify({
-          model: "openclaw:jarvis",
-          messages: messagesWithContext,
-          stream: true,
-          // Note: Kimi K2.5 reasoning is enabled via /think: directive in messages
-          // The reasoning_effort param is for OpenAI models, not Kimi
-        }),
-      }
-    )
+    let response: Response
+    try {
+      response = await fetch(
+        `${openclawUrl}/v1/chat/completions`,
+        {
+          method: "POST",
+          headers,
+          body: JSON.stringify({
+            model: "openclaw:jarvis",
+            messages: messagesWithContext,
+            stream: true,
+            // Note: Kimi K2.5 reasoning is enabled via /think: directive in messages
+            // The reasoning_effort param is for OpenAI models, not Kimi
+          }),
+        }
+      )
+    } catch (fetchError) {
+      const msg = fetchError instanceof Error ? fetchError.message : "Fetch failed"
+      console.error("OpenClaw fetch error:", msg)
+      return new Response(JSON.stringify({
+        error: "Cannot reach OpenClaw",
+        details: msg,
+        url: openclawUrl
+      }), {
+        status: 502,
+        headers: { "Content-Type": "application/json" },
+      })
+    }
 
     if (!response.ok) {
       const error = await response.text()
-      return new Response(JSON.stringify({ error }), {
+      return new Response(JSON.stringify({ error, status: response.status }), {
         status: response.status,
         headers: { "Content-Type": "application/json" },
       })
@@ -323,8 +337,15 @@ export async function POST(request: Request) {
       },
     })
   } catch (error) {
+    const errorMessage = error instanceof Error ? error.message : "Unknown error"
+    console.error("Chat API error:", errorMessage)
     return new Response(
-      JSON.stringify({ error: "Failed to process request" }),
+      JSON.stringify({
+        error: "Failed to process request",
+        details: errorMessage,
+        openclawUrl: process.env.OPENCLAW_URL ? "set" : "missing",
+        openclawToken: process.env.OPENCLAW_TOKEN ? "set" : "missing"
+      }),
       {
         status: 500,
         headers: { "Content-Type": "application/json" },
