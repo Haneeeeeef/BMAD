@@ -1,4 +1,6 @@
-export const runtime = "edge"
+// Using Node.js runtime instead of Edge because Edge doesn't allow direct IP access
+// and our VPS (OpenClaw) doesn't have a domain configured yet
+export const runtime = "nodejs"
 
 type AttachmentType = "image" | "file" | "audio" | "chatgpt-export"
 
