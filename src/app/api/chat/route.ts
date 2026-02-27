@@ -33,8 +33,9 @@ interface VisionMessage {
 
 interface ChatRequest {
   messages: Message[]
-  sessionId?: string
+  sessionId?: string  // Mission Control chat session ID (used as unique token)
   canvasStatus?: string
+  userToken?: string  // User token for per-user session isolation
 }
 
 // Parse ChatGPT export JSON to readable text
@@ -171,6 +172,13 @@ async function transcribeAudio(
   return data.text || ""
 }
 
+// Extract username from user token (format: mc_username_hash)
+function extractUsername(userToken: string | undefined): string | null {
+  if (!userToken) return null
+  const match = userToken.match(/^mc_([a-z0-9]+)_/)
+  return match ? match[1] : null
+}
+
 export async function POST(request: Request) {
   const openclawUrl = process.env.OPENCLAW_URL
   const openclawToken = process.env.OPENCLAW_TOKEN
@@ -183,29 +191,58 @@ export async function POST(request: Request) {
   }
 
   try {
-    const { messages, canvasStatus }: ChatRequest = await request.json()
+    const { messages, sessionId, canvasStatus, userToken }: ChatRequest = await request.json()
 
-    // Transform messages with attachments to Claude multimodal format
+    // Extract username for session isolation
+    const username = extractUsername(userToken)
+
+    // Transform messages with attachments to OpenAI vision format
     const transformedMessages = await transformMessages(messages, openclawUrl, openclawToken)
 
-    // Inject canvas status as system context if provided
-    const messagesWithContext = canvasStatus
-      ? [{ role: "system" as const, content: canvasStatus }, ...transformedMessages]
+    // Build system context (username + canvas status only)
+    // NOTE: SOUL.md, TOOLS.md, AGENTS.md, MEMORY.md are injected by OpenClaw from workspace
+    const systemParts: string[] = []
+
+    if (username) {
+      systemParts.push(`You are chatting with ${username}.`)
+    }
+    if (canvasStatus) {
+      systemParts.push(canvasStatus)
+    }
+
+    // Inject system context if any
+    const messagesWithContext = systemParts.length > 0
+      ? [{ role: "system" as const, content: systemParts.join("\n\n") }, ...transformedMessages]
       : transformedMessages
 
+    // Build headers with session key for user isolation
+    const headers: Record<string, string> = {
+      "Content-Type": "application/json",
+      Authorization: `Bearer ${openclawToken}`,
+    }
+
+    // Use agent:jarvis:mc:username:sessionId format for proper agent routing
+    // OpenClaw routes sessions based on the "agent:<agentId>:" prefix
+    if (sessionId) {
+      const sessionKey = username
+        ? `agent:jarvis:mc:${username}:${sessionId}`
+        : `agent:jarvis:mc:${sessionId}`
+      headers["x-openclaw-session-key"] = sessionKey
+    } else if (username) {
+      headers["x-openclaw-session-key"] = `agent:jarvis:mc:${username}`
+    }
 
     const response = await fetch(
       `${openclawUrl}/v1/chat/completions`,
       {
         method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-          Authorization: `Bearer ${openclawToken}`,
-        },
+        headers,
         body: JSON.stringify({
           model: "openclaw:jarvis",
           messages: messagesWithContext,
           stream: true,
+          // Note: Kimi K2.5 reasoning is enabled via /think: directive in messages
+          // The reasoning_effort param is for OpenAI models, not Kimi
         }),
       }
     )
@@ -248,7 +285,18 @@ export async function POST(request: Request) {
 
                 try {
                   const json = JSON.parse(data)
-                  const content = json.choices?.[0]?.delta?.content
+                  const delta = json.choices?.[0]?.delta
+
+                  // Handle reasoning/thinking content (Kimi K2.5)
+                  const reasoning = delta?.reasoning_content || delta?.thinking
+                  if (reasoning) {
+                    controller.enqueue(
+                      encoder.encode(`data: ${JSON.stringify({ reasoning })}\n\n`)
+                    )
+                  }
+
+                  // Handle regular content
+                  const content = delta?.content
                   if (content) {
                     controller.enqueue(
                       encoder.encode(`data: ${JSON.stringify({ content })}\n\n`)

@@ -137,6 +137,7 @@ export function ChatSearch({
             value={query}
             onChange={(e) => setQuery(e.target.value)}
             placeholder={placeholder}
+            aria-label="Search"
             className="flex-1 bg-transparent text-base placeholder:text-muted-foreground/50 focus:outline-none"
           />
           <button

@@ -252,6 +252,7 @@ export const ChatInput = React.forwardRef<ChatInputHandle, ChatInputProps>(
           onKeyDown={handleKeyDown}
           onPaste={handlePaste}
           placeholder={placeholder}
+          aria-label="Message input"
           rows={1}
           className={cn(
             "flex-1 resize-none bg-transparent text-[15px] leading-6",

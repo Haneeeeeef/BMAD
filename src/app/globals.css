@@ -1,6 +1,7 @@
 @import "tailwindcss";
 @import "tw-animate-css";
 @import "shadcn/tailwind.css";
+@import "../styles/toast-animations.css";
 @plugin "@tailwindcss/typography";
 
 @custom-variant dark (&:is(.dark *));
@@ -50,12 +51,20 @@
 
 :root {
   --radius: 0.625rem;
+  /* Brand colors - use for primary actions */
   --brand: #00719c;
-  --brand-hover: #00415a;
+  --brand-hover: #005f83;
   --brand-light: #009bd6;
   --brand-lighter: #00b8ff;
   --brand-dark: #00415a;
   --brand-darker: #001f2b;
+  /* Semantic action colors */
+  --confirm: #00719c;
+  --confirm-hover: #005f83;
+  --confirm-foreground: #ffffff;
+  --danger: #dc2626;
+  --danger-hover: #b91c1c;
+  --danger-foreground: #ffffff;
   --background: oklch(1 0 0);
   --foreground: oklch(0.145 0 0);
   --card: oklch(1 0 0);

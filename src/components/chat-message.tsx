@@ -5,7 +5,7 @@ import ReactMarkdown from "react-markdown"
 import remarkGfm from "remark-gfm"
 import { cn } from "@/lib/utils"
 import { Message, Attachment } from "@/lib/types"
-import { Copy, ThumbsUp, ThumbsDown, Volume2, RotateCcw, MoreHorizontal, FileText, Music } from "lucide-react"
+import { Copy, ThumbsUp, ThumbsDown, Volume2, RotateCcw, MoreHorizontal, FileText, Music, ChevronDown, ChevronRight, Loader2 } from "lucide-react"
 import { toast } from "sonner"
 import { stabilizeStreamingMarkdown } from "@/lib/streaming-markdown"
 import { ExcalidrawDiagram } from "./excalidraw-diagram"
@@ -20,21 +20,137 @@ function parseOpenClawContent(content: string): string {
     // Try to extract just the current message section
     const currentMatch = content.match(/\[Current message - respond to this\]\s*([\s\S]*)/i)
     if (currentMatch) {
-      return currentMatch[1].trim()
+      return fixSentenceSpacing(currentMatch[1].trim())
     }
     // If no current message marker, try to get content after the context block
     const afterContext = content.replace(/\[Chat messages since your last reply[^\]]*\][\s\S]*?\[Current message[^\]]*\]/gi, "").trim()
     if (afterContext) {
-      return afterContext
+      return fixSentenceSpacing(afterContext)
     }
   }
 
   // Remove any remaining internal markers
-  return content
+  const cleaned = content
     .replace(/\[Chat messages since your last reply[^\]]*\]/gi, "")
     .replace(/\[Current message - respond to this\]/gi, "")
     .replace(/^User:\s*/gm, "") // Remove "User:" prefixes from context replay
     .trim()
+
+  return fixSentenceSpacing(cleaned)
+}
+
+// Fix missing spaces after sentence-ending punctuation followed by capital letters
+// Handles cases like "now.I'm" → "now. I'm" from streaming concatenation
+function fixSentenceSpacing(text: string): string {
+  if (!text) return ""
+  // Add space after . ! ? when followed directly by a capital letter
+  return text.replace(/([.!?])([A-Z])/g, '$1 $2')
+}
+
+// Fix broken markdown tables that have rows concatenated on single line
+// Streaming can cause: "| A | B | |---| | C |" instead of proper newlines
+function fixBrokenTables(text: string): string {
+  if (!text || !text.includes('|')) return text
+
+  let fixed = text
+
+  // Pattern 1: "| |---" - header row ends, separator starts
+  // e.g., "| Output | |--------" → "| Output |\n|--------"
+  fixed = fixed.replace(/\|\s+\|([-:]+)/g, '|\n|$1')
+
+  // Pattern 2: "|| |" or "-| |" - separator ends, data row starts
+  // e.g., "-------|| | **Quick" → "-------|\n| **Quick"
+  fixed = fixed.replace(/[-|]\|\s+\|\s+/g, '|\n| ')
+
+  // Pattern 3: "| | **" - data row ends, new row with bold starts
+  // e.g., "file paths | | **Quick-Dev**" → "file paths |\n| **Quick-Dev**"
+  fixed = fixed.replace(/\|\s+\|\s+\*\*/g, '|\n| **')
+
+  // Pattern 4: General "| | X" where X is word char - likely new row
+  // e.g., "implementation | | Quick" → "implementation |\n| Quick"
+  fixed = fixed.replace(/\|\s+\|\s+([A-Za-z0-9])/g, '|\n| $1')
+
+  return fixed
+}
+
+// Patterns that indicate "thinking" or status output (collapsed by default)
+// These are agent setup/initialization messages, not the actual conversation
+const THINKING_PATTERNS = [
+  // Action verbs at start of line
+  /^(Checking|Looking|Searching|Reading|Loading|Creating|Initializing|Discovering|Scanning|Setting up|Configuring|Preparing|Starting|Opening|Finding|Locating|Verifying|Validating|Processing|Analyzing|Examining|Reviewing)/i,
+  // Planning phrases
+  /^Let me\s/i,
+  /^I('ll| will| am going to| need to)\s/i,
+  /^(First|Now|Next),?\s*(let me|I('ll| will))/i,
+  // Status updates
+  /^(Done|Complete|Finished|Ready|Found|Located|Created|Initialized|Set up)/i,
+  // Bullet points with actions
+  /^\s*[-•]\s*(Checking|Looking|Searching|Created|Input|Found|Reading|No |None)/i,
+  // File paths with status
+  /\/home\/\w+\/.*\s*[-—]/,
+  /^\s*[-•]\s*\/\w+/,
+  // Status indicators with em-dash
+  /—\s*(empty|none|not found|found|exists|created|unavailable|ready|complete|done|ok|success)/i,
+  // Setup messages
+  /^(Document Setup|workspace is ready|Project setup|Folder structure)/i,
+  /sub-agent unavailable/i,
+  /same result, just sequential/i,
+  // Welcome/intro that's part of setup (not the actual greeting question)
+  /^Welcome.*workspace is ready/i,
+  // Technical paths and operations
+  /^\s*(mkdir|cd|cat|ls|reading|writing|creating)\s/i,
+  /^(PROJECT-CONTEXT|WORKFLOW-TRANSCRIPT)/i,
+  // OpenClaw reasoning mode markers
+  /^I('ll)?\s*engage\s*reasoning\s*mode/i,
+  /^\*\*Reasoning( Process)?:?\*\*/i,
+  /^\d+\.\s*\*\*(Definition|Step|Analysis|Calculation|Conclusion)/i,
+]
+
+// Check if content contains a reasoning block (OpenClaw format)
+function extractReasoningBlock(content: string): { reasoning: string; main: string } {
+  // Look for **Reasoning Process:** or **Reasoning:** blocks
+  const reasoningMatch = content.match(/(\*\*Reasoning( Process)?:?\*\*[\s\S]*?)(?=\n\n\*\*(?!Reasoning)|$)/i)
+
+  if (reasoningMatch) {
+    const reasoning = reasoningMatch[1].trim()
+    const main = content.replace(reasoningMatch[0], '').trim()
+    return { reasoning, main }
+  }
+
+  return { reasoning: '', main: content }
+}
+
+// Parse content into thinking blocks and main content
+function parseThinkingBlocks(content: string): { thinking: string[]; main: string } {
+  if (!content) return { thinking: [], main: "" }
+
+  const lines = content.split('\n')
+  const thinking: string[] = []
+  const main: string[] = []
+  let inThinkingBlock = false
+  let consecutiveThinkingLines = 0
+
+  for (const line of lines) {
+    const isThinkingLine = THINKING_PATTERNS.some(pattern => pattern.test(line))
+
+    if (isThinkingLine) {
+      thinking.push(line)
+      consecutiveThinkingLines++
+      inThinkingBlock = true
+    } else if (inThinkingBlock && consecutiveThinkingLines > 0 && line.trim() === '') {
+      // Empty line after thinking - keep in thinking block
+      thinking.push(line)
+    } else {
+      inThinkingBlock = false
+      consecutiveThinkingLines = 0
+      main.push(line)
+    }
+  }
+
+  return {
+    thinking: thinking.filter(l => l.trim()),
+    main: main.join('\n').trim()
+  }
 }
 
 interface ChatMessageProps {
@@ -49,6 +165,7 @@ export const ChatMessage = React.memo(function ChatMessage({
   className,
 }: ChatMessageProps) {
   const isUser = message.role === "user"
+  const [showThinking, setShowThinking] = React.useState(false)
 
   const handleCopy = () => {
     navigator.clipboard.writeText(message.content)
@@ -57,17 +174,48 @@ export const ChatMessage = React.memo(function ChatMessage({
 
   // Use streaming-aware markdown cleaner when loading, regular content when done
   // Also parse out OpenClaw context injection for assistant messages
-  const processMarkdown = React.useMemo(() => {
-    if (!message.content) return ""
+  const { reasoningContent, mainContent } = React.useMemo(() => {
+    if (!message.content) return { reasoningContent: "", mainContent: "" }
 
     // Parse out OpenClaw context injection markers (assistant messages only)
     const cleanedContent = message.role === "assistant"
       ? parseOpenClawContent(message.content)
       : message.content
 
+    // Use Kimi's reasoning if available, otherwise parse thinking from content
+    if (message.role === "assistant") {
+      // First check for explicit reasoning field from API
+      if (message.reasoning) {
+        const processedMain = isLoading
+          ? fixBrokenTables(fixSentenceSpacing(stabilizeStreamingMarkdown(cleanedContent)))
+          : fixBrokenTables(fixSentenceSpacing(cleanedContent))
+        return { reasoningContent: message.reasoning, mainContent: processedMain }
+      }
+
+      // Check for OpenClaw reasoning block format (**Reasoning Process:**)
+      const { reasoning: reasoningBlock, main: mainAfterBlock } = extractReasoningBlock(cleanedContent)
+
+      // Then parse remaining thinking patterns from content
+      const { thinking, main } = parseThinkingBlocks(mainAfterBlock)
+
+      // Combine reasoning sources
+      const allReasoning = [reasoningBlock, ...thinking].filter(Boolean).join('\n')
+
+      const processedMain = isLoading
+        ? fixBrokenTables(fixSentenceSpacing(stabilizeStreamingMarkdown(main)))
+        : fixBrokenTables(fixSentenceSpacing(main))
+      return {
+        reasoningContent: allReasoning,
+        mainContent: processedMain
+      }
+    }
+
     // Only stabilize during streaming to remove incomplete syntax
-    return isLoading ? stabilizeStreamingMarkdown(cleanedContent) : cleanedContent
-  }, [message.content, message.role, isLoading])
+    return {
+      reasoningContent: "",
+      mainContent: isLoading ? stabilizeStreamingMarkdown(cleanedContent) : cleanedContent
+    }
+  }, [message.content, message.reasoning, message.role, isLoading])
 
   // User message - bubble on right
   if (isUser) {
@@ -105,6 +253,38 @@ export const ChatMessage = React.memo(function ChatMessage({
           </div>
         ) : (
           <>
+            {/* Collapsible Thinking/Reasoning Block */}
+            {reasoningContent && (
+              <div className="mb-3">
+                <button
+                  onClick={() => setShowThinking(!showThinking)}
+                  className="flex items-center gap-1.5 text-xs text-muted-foreground hover:text-foreground transition-colors py-1"
+                >
+                  {showThinking ? (
+                    <ChevronDown className="h-3.5 w-3.5" />
+                  ) : (
+                    <ChevronRight className="h-3.5 w-3.5" />
+                  )}
+                  <span className="font-medium">
+                    {showThinking ? "Hide" : "Show"} thinking
+                  </span>
+                  {!showThinking && (
+                    <span className="text-muted-foreground/60">
+                      ({reasoningContent.split('\n').filter(l => l.trim()).length} steps)
+                    </span>
+                  )}
+                </button>
+                {showThinking && (
+                  <div className="mt-2 pl-4 border-l-2 border-muted text-sm text-muted-foreground space-y-1">
+                    {reasoningContent.split('\n').filter(l => l.trim()).map((line, i) => (
+                      <p key={i} className="text-[13px] leading-relaxed">{line}</p>
+                    ))}
+                  </div>
+                )}
+              </div>
+            )}
+
+            {/* Main Content */}
             <div className="markdown-content">
               <ReactMarkdown
                 remarkPlugins={[remarkGfm]}
@@ -160,7 +340,7 @@ export const ChatMessage = React.memo(function ChatMessage({
                   ),
                 }}
               >
-                {processMarkdown}
+                {mainContent}
               </ReactMarkdown>
             </div>
 

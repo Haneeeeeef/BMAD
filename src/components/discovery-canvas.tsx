@@ -1,18 +1,29 @@
 "use client"
 
 import * as React from "react"
+import dynamic from "next/dynamic"
 import ReactMarkdown from "react-markdown"
 import remarkGfm from "remark-gfm"
 import { cn } from "@/lib/utils"
 import { CanvasStatus } from "@/lib/canvas-types"
 import { CanvasStatusBadge } from "./canvas-status-badge"
-import { ExcalidrawDiagram } from "./excalidraw-diagram"
-import { MermaidDiagram } from "./mermaid-diagram"
-import { Check, Copy, FileDown, X, FileText, GitBranch, Image, FileType, Pencil, LayoutGrid } from "lucide-react"
+import { Check, Copy, FileDown, X, FileText, GitBranch, Image, FileType, Pencil, LayoutGrid, Trash2, Loader2 } from "lucide-react"
+
+// Lazy load heavy diagram components
+const ExcalidrawDiagram = dynamic(() => import("./excalidraw-diagram").then(m => ({ default: m.ExcalidrawDiagram })), {
+  ssr: false,
+  loading: () => <div className="h-[400px] flex items-center justify-center bg-muted/50 rounded-lg"><Loader2 className="h-6 w-6 animate-spin text-muted-foreground" /></div>,
+})
+
+const MermaidDiagram = dynamic(() => import("./mermaid-diagram").then(m => ({ default: m.MermaidDiagram })), {
+  ssr: false,
+  loading: () => <div className="h-[400px] flex items-center justify-center bg-muted/50 rounded-lg"><Loader2 className="h-6 w-6 animate-spin text-muted-foreground" /></div>,
+})
 import { toast } from "sonner"
 import type { CanvasDocument, DocumentVersion } from "@/lib/canvas-storage"
 import { getCurrentVersion, getLatestVersion } from "@/lib/canvas-storage"
 import { ChevronLeft, ChevronRight } from "lucide-react"
+import { ApprovalModal } from "@/components/approval-modal"
 
 // Check if document type is a diagram
 function isDiagramType(type: string): boolean {
@@ -52,14 +63,111 @@ export function DiscoveryCanvas({
   onClose,
   className,
 }: DiscoveryCanvasProps) {
+  const [showApprovalModal, setShowApprovalModal] = React.useState(false)
   const activeDoc = documents.find(d => d.identifier === activeDocumentId) || documents[0]
   const currentVersion = activeDoc ? getCurrentVersion(activeDoc) : undefined
   const latestVersionNum = activeDoc ? getLatestVersion(activeDoc) : 1
   const totalVersions = activeDoc?.versions?.length || 1
+  const isLatestVersion = currentVersion?.version === latestVersionNum
 
   // Diagram render mode: "excalidraw" (hand-drawn) or "mermaid" (structured)
   const [diagramMode, setDiagramMode] = React.useState<"excalidraw" | "mermaid">("excalidraw")
   const isDiagram = activeDoc ? isDiagramType(activeDoc.type) : false
+
+  // Memoized handlers for diagram mode toggle
+  const handleSetExcalidraw = React.useCallback(() => setDiagramMode("excalidraw"), [])
+  const handleSetMermaid = React.useCallback(() => setDiagramMode("mermaid"), [])
+
+  // Memoize markdown components to prevent diagram re-renders on scroll/type
+  const markdownComponents = React.useMemo(() => ({
+    a: ({ href, children }: { href?: string; children?: React.ReactNode }) => (
+      <a href={href} target="_blank" rel="noopener noreferrer" className="text-primary hover:underline">
+        {children}
+      </a>
+    ),
+    table: ({ children }: { children?: React.ReactNode }) => (
+      <div className="not-prose overflow-x-auto my-4">
+        <table className="w-full border-collapse text-sm">{children}</table>
+      </div>
+    ),
+    thead: ({ children }: { children?: React.ReactNode }) => (
+      <thead className="bg-muted/50">{children}</thead>
+    ),
+    tbody: ({ children }: { children?: React.ReactNode }) => (
+      <tbody>{children}</tbody>
+    ),
+    tr: ({ children }: { children?: React.ReactNode }) => (
+      <tr>{children}</tr>
+    ),
+    th: ({ children }: { children?: React.ReactNode }) => (
+      <th className="border border-border px-4 py-2 text-left font-semibold">{children}</th>
+    ),
+    td: ({ children }: { children?: React.ReactNode }) => (
+      <td className="border border-border px-4 py-2">{children}</td>
+    ),
+    code: ({ className, children, ...props }: { className?: string; children?: React.ReactNode }) => {
+      const match = /language-(\w+)/.exec(className || "")
+      const lang = match ? match[1] : ""
+      const codeString = String(children).replace(/\n$/, "")
+
+      // Render mermaid diagrams - toggle between Excalidraw and Mermaid
+      if (lang === "mermaid") {
+        return (
+          <div className="relative my-4">
+            {/* Diagram mode toggle overlay */}
+            <div className="absolute -top-3 left-0 z-10 flex items-center border rounded-md overflow-hidden text-xs bg-background/80 backdrop-blur-sm shadow-sm">
+              <button
+                onClick={handleSetExcalidraw}
+                className={cn(
+                  "flex items-center gap-1 px-2 py-1 transition-colors",
+                  diagramMode === "excalidraw"
+                    ? "bg-primary text-primary-foreground"
+                    : "hover:bg-muted text-muted-foreground"
+                )}
+                aria-label="Hand-drawn style"
+              >
+                <Pencil className="h-3 w-3" />
+                <span>Sketch</span>
+              </button>
+              <button
+                onClick={handleSetMermaid}
+                className={cn(
+                  "flex items-center gap-1 px-2 py-1 transition-colors",
+                  diagramMode === "mermaid"
+                    ? "bg-primary text-primary-foreground"
+                    : "hover:bg-muted text-muted-foreground"
+                )}
+                aria-label="Structured style"
+              >
+                <LayoutGrid className="h-3 w-3" />
+                <span>Mermaid</span>
+              </button>
+            </div>
+            {/* Diagram */}
+            {diagramMode === "excalidraw"
+              ? <ExcalidrawDiagram chart={codeString} className="" />
+              : <MermaidDiagram chart={codeString} className="p-4 bg-muted/30 rounded-lg" />
+            }
+          </div>
+        )
+      }
+
+      // Inline code
+      if (!className) {
+        return <code className="bg-muted px-1.5 py-0.5 rounded text-sm font-mono" {...props}>{children}</code>
+      }
+
+      // Code block
+      return (
+        <code className={cn("block", className)} {...props}>
+          {children}
+        </code>
+      )
+    },
+    pre: ({ children }: { children?: React.ReactNode }) => (
+      <pre className="bg-muted p-4 rounded-lg overflow-x-auto mb-4 text-sm">{children}</pre>
+    ),
+  }), [diagramMode, currentVersion?.content, handleSetExcalidraw, handleSetMermaid])
 
   const handlePrevVersion = () => {
     if (!activeDoc || !onVersionChange || !currentVersion) return
@@ -191,97 +299,20 @@ export function DiscoveryCanvas({
 
   return (
     <div className={cn("flex flex-col h-full bg-background", className)}>
-      {/* Header with tabs */}
+      {/* Header */}
       <div className="border-b">
-        {/* Tabs */}
-        {documents.length > 0 && (
-          <div className="flex items-center gap-1 px-2 pt-2 overflow-x-auto">
-            {documents.map((doc) => {
-              const Icon = getDocumentIcon(doc.type)
-              const isActive = doc.identifier === activeDoc.identifier
-              return (
-                <div
-                  key={doc.identifier}
-                  className={cn(
-                    "group flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium rounded-t-md border border-b-0 transition-colors whitespace-nowrap",
-                    isActive
-                      ? "bg-background text-foreground border-border"
-                      : "bg-muted/50 text-muted-foreground border-transparent hover:bg-muted hover:text-foreground"
-                  )}
-                >
-                  <button
-                    onClick={() => onDocumentSelect(doc.identifier)}
-                    aria-label={`View ${doc.title}`}
-                    className="flex items-center gap-1.5"
-                  >
-                    <Icon className="h-3.5 w-3.5" />
-                    <span className="max-w-[100px] truncate">{doc.title}</span>
-                    {getCurrentVersion(doc)?.status === "approved" && (
-                      <Check className="h-3 w-3 text-emerald-500" />
-                    )}
-                    {getCurrentVersion(doc)?.status === "awaiting_approval" && (
-                      <span className="h-2 w-2 rounded-full bg-amber-500" />
-                    )}
-                  </button>
-                  {onDocumentClose && (
-                    <button
-                      onClick={(e) => {
-                        e.stopPropagation()
-                        onDocumentClose(doc.identifier)
-                      }}
-                      aria-label={`Close ${doc.title}`}
-                      className="ml-1 p-0.5 rounded hover:bg-muted-foreground/20 opacity-0 group-hover:opacity-100 transition-opacity"
-                    >
-                      <X className="h-3 w-3" />
-                    </button>
-                  )}
-                </div>
-              )
-            })}
-          </div>
-        )}
-
         {/* Title bar */}
-        <div className="flex items-center justify-between px-4 py-2">
-          <div className="flex items-center gap-2">
-            <h2 className="text-sm font-semibold">{activeDoc.title}</h2>
-            {currentVersion && <CanvasStatusBadge status={currentVersion.status} />}
+        <div className="flex items-center justify-between gap-4 px-4 py-2">
+          <div className="flex items-center gap-2 min-w-0">
+            <h2 className="text-sm font-semibold truncate">{activeDoc.title}</h2>
+            {currentVersion && isLatestVersion && (
+              <CanvasStatusBadge status={currentVersion.status} className="shrink-0" />
+            )}
           </div>
           <div className="flex items-center gap-2">
-            {/* Diagram mode toggle */}
-            {isDiagram && (
-              <div className="flex items-center border rounded-md overflow-hidden text-xs">
-                <button
-                  onClick={() => setDiagramMode("excalidraw")}
-                  className={cn(
-                    "flex items-center gap-1 px-2 py-1 transition-colors",
-                    diagramMode === "excalidraw"
-                      ? "bg-primary text-primary-foreground"
-                      : "hover:bg-muted text-muted-foreground"
-                  )}
-                  aria-label="Hand-drawn style"
-                >
-                  <Pencil className="h-3 w-3" />
-                  <span className="hidden sm:inline">Sketch</span>
-                </button>
-                <button
-                  onClick={() => setDiagramMode("mermaid")}
-                  className={cn(
-                    "flex items-center gap-1 px-2 py-1 transition-colors",
-                    diagramMode === "mermaid"
-                      ? "bg-primary text-primary-foreground"
-                      : "hover:bg-muted text-muted-foreground"
-                  )}
-                  aria-label="Structured style"
-                >
-                  <LayoutGrid className="h-3 w-3" />
-                  <span className="hidden sm:inline">Mermaid</span>
-                </button>
-              </div>
-            )}
-            {/* Version selector */}
-            {totalVersions > 1 && (
-              <div className="flex items-center gap-1 text-xs text-muted-foreground">
+            {/* Version selector - always show version, nav only when multiple */}
+            <div className="flex items-center gap-1 text-xs text-muted-foreground">
+              {totalVersions > 1 && (
                 <button
                   onClick={handlePrevVersion}
                   disabled={!canGoPrev}
@@ -290,9 +321,11 @@ export function DiscoveryCanvas({
                 >
                   <ChevronLeft className="h-4 w-4" />
                 </button>
-                <span className="min-w-[60px] text-center">
-                  v{currentVersion?.version || 1} / {latestVersionNum}
-                </span>
+              )}
+              <span className="min-w-[40px] text-center">
+                v{currentVersion?.version || 1}
+              </span>
+              {totalVersions > 1 && (
                 <button
                   onClick={handleNextVersion}
                   disabled={!canGoNext}
@@ -301,8 +334,8 @@ export function DiscoveryCanvas({
                 >
                   <ChevronRight className="h-4 w-4" />
                 </button>
-              </div>
-            )}
+              )}
+            </div>
             {onClose && (
               <button
                 onClick={onClose}
@@ -322,40 +355,7 @@ export function DiscoveryCanvas({
           <div ref={contentRef} className="prose prose-sm dark:prose-invert max-w-none prose-headings:flex prose-headings:items-center prose-headings:gap-2">
             <ReactMarkdown
               remarkPlugins={[remarkGfm]}
-              components={{
-                a: ({ href, children }) => (
-                  <a href={href} target="_blank" rel="noopener noreferrer" className="text-primary hover:underline">
-                    {children}
-                  </a>
-                ),
-                code: ({ className, children, ...props }) => {
-                  const match = /language-(\w+)/.exec(className || "")
-                  const lang = match ? match[1] : ""
-                  const codeString = String(children).replace(/\n$/, "")
-
-                  // Render mermaid diagrams - toggle between Excalidraw and Mermaid
-                  if (lang === "mermaid") {
-                    return diagramMode === "excalidraw"
-                      ? <ExcalidrawDiagram chart={codeString} className="my-4" />
-                      : <MermaidDiagram chart={codeString} className="my-4 p-4 bg-muted/30 rounded-lg overflow-x-auto" />
-                  }
-
-                  // Inline code
-                  if (!className) {
-                    return <code className="bg-muted px-1.5 py-0.5 rounded text-sm font-mono" {...props}>{children}</code>
-                  }
-
-                  // Code block
-                  return (
-                    <code className={cn("block", className)} {...props}>
-                      {children}
-                    </code>
-                  )
-                },
-                pre: ({ children }) => (
-                  <pre className="bg-muted p-4 rounded-lg overflow-x-auto mb-4 text-sm">{children}</pre>
-                ),
-              }}
+              components={markdownComponents}
             >
               {currentVersion?.content || ""}
             </ReactMarkdown>
@@ -393,22 +393,54 @@ export function DiscoveryCanvas({
           </button>
         </div>
 
-        {currentVersion?.status === "awaiting_approval" && (
-          <button
-            onClick={handleApprove}
-            className="flex items-center gap-1.5 px-4 py-2 text-sm font-medium bg-primary text-primary-foreground hover:bg-primary/90 rounded-lg transition-colors"
-            aria-label={`Approve ${activeDoc.title}`}
-          >
-            <Check className="h-4 w-4" />
-            Approve
-          </button>
+        {currentVersion?.status === "awaiting_approval" && isLatestVersion && (
+          <>
+            <button
+              onClick={() => setShowApprovalModal(true)}
+              className="flex items-center gap-1.5 px-4 py-2 text-sm font-medium bg-primary text-primary-foreground hover:bg-primary/90 rounded-lg transition-colors"
+              aria-label={`Approve ${activeDoc.title}`}
+            >
+              <Check className="h-4 w-4" />
+              Approve
+            </button>
+            <ApprovalModal
+              open={showApprovalModal}
+              onOpenChange={setShowApprovalModal}
+              title="Approve & Create Project"
+              description="This will create a project and redirect you to the project workspace. This action cannot be undone."
+              onConfirm={handleApprove}
+              confirmText="Approve & Continue"
+            />
+          </>
         )}
 
-        {currentVersion?.status === "approved" && (
-          <div className="flex items-center gap-1.5 text-sm text-emerald-600">
+        {currentVersion?.status === "approved" && isLatestVersion && (
+          <button
+            onClick={() => {
+              // Temporary unapprove - directly update localStorage
+              const sessionId = window.location.pathname.split('/').pop()
+              const canvasKey = `canvas-${sessionId}`
+              const canvas = JSON.parse(localStorage.getItem(canvasKey) || '{}')
+              if (canvas.documents) {
+                canvas.documents.forEach((doc: { identifier: string; versions?: Array<{ status: string; approvedAt?: number }> }) => {
+                  if (doc.identifier === activeDoc?.identifier && doc.versions) {
+                    doc.versions.forEach(v => {
+                      v.status = 'awaiting_approval'
+                      delete v.approvedAt
+                    })
+                  }
+                })
+                localStorage.setItem(canvasKey, JSON.stringify(canvas))
+                // Also delete any projects
+                localStorage.setItem('mission-control-projects', '[]')
+                window.location.reload()
+              }
+            }}
+            className="flex items-center gap-1.5 px-4 py-2 text-sm font-medium text-emerald-600 hover:bg-muted rounded-lg transition-colors"
+          >
             <Check className="h-4 w-4" />
-            Approved
-          </div>
+            Approved (click to unapprove)
+          </button>
         )}
       </div>
     </div>

@@ -37,7 +37,8 @@ export const ExcalidrawDiagram = React.memo(function ExcalidrawDiagram({ chart, 
 
   // Parse Mermaid to Excalidraw elements
   React.useEffect(() => {
-    const trimmedChart = chart.trim()
+    // Preprocess: convert <br> tags to newlines for mermaid
+    const trimmedChart = chart.trim().replace(/<br\s*\/?>/gi, '\n')
 
     // Skip if chart hasn't changed
     if (trimmedChart === lastChartRef.current) return

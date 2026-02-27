@@ -18,6 +18,7 @@ export interface Message {
   id: string
   role: "user" | "assistant"
   content: string
+  reasoning?: string  // Kimi K2.5 reasoning/thinking content
   attachments?: Attachment[]
   createdAt: number
 }

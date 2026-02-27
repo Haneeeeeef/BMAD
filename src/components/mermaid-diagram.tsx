@@ -2,6 +2,8 @@
 
 import * as React from "react"
 import mermaid from "mermaid"
+import { TransformWrapper, TransformComponent } from "react-zoom-pan-pinch"
+import { ZoomIn, ZoomOut, RotateCcw } from "lucide-react"
 
 // Initialize mermaid with config
 mermaid.initialize({
@@ -18,7 +20,6 @@ interface MermaidDiagramProps {
 
 // Memoized to prevent re-renders on parent scroll/type
 export const MermaidDiagram = React.memo(function MermaidDiagram({ chart, className }: MermaidDiagramProps) {
-  const containerRef = React.useRef<HTMLDivElement>(null)
   const [svg, setSvg] = React.useState<string>("")
   const [error, setError] = React.useState<string | null>(null)
   const lastChartRef = React.useRef<string>("")
@@ -70,13 +71,58 @@ export const MermaidDiagram = React.memo(function MermaidDiagram({ chart, classN
   }
 
   return (
-    <div
-      ref={containerRef}
-      className={className}
-      dangerouslySetInnerHTML={{ __html: svg }}
-    />
+    <div className={className}>
+      <TransformWrapper
+        initialScale={1}
+        minScale={0.2}
+        maxScale={4}
+        centerOnInit={true}
+        wheel={{ step: 0.1 }}
+      >
+        {({ zoomIn, zoomOut, resetTransform }) => (
+          <div
+            className="relative border rounded-lg overflow-hidden bg-white"
+            style={{ height: "400px" }}
+          >
+            {/* Zoom controls - bottom left overlay */}
+            <div className="absolute bottom-2 left-2 z-10 flex items-center gap-1 bg-background/80 backdrop-blur-sm rounded-md shadow-sm border">
+              <button
+                onClick={() => zoomIn()}
+                className="p-1.5 text-muted-foreground hover:text-foreground hover:bg-muted rounded transition-colors"
+                aria-label="Zoom in"
+              >
+                <ZoomIn className="h-4 w-4" />
+              </button>
+              <button
+                onClick={() => zoomOut()}
+                className="p-1.5 text-muted-foreground hover:text-foreground hover:bg-muted rounded transition-colors"
+                aria-label="Zoom out"
+              >
+                <ZoomOut className="h-4 w-4" />
+              </button>
+              <button
+                onClick={() => resetTransform()}
+                className="p-1.5 text-muted-foreground hover:text-foreground hover:bg-muted rounded transition-colors"
+                aria-label="Reset zoom"
+              >
+                <RotateCcw className="h-4 w-4" />
+              </button>
+            </div>
+
+            <TransformComponent
+              wrapperStyle={{ width: "100%", height: "100%" }}
+              contentStyle={{ width: "100%", height: "100%", display: "flex", alignItems: "center", justifyContent: "center" }}
+            >
+              <div
+                className="p-4"
+                dangerouslySetInnerHTML={{ __html: svg }}
+              />
+            </TransformComponent>
+          </div>
+        )}
+      </TransformWrapper>
+    </div>
   )
 }, (prevProps, nextProps) => {
-  // Only re-render if chart content actually changed
   return prevProps.chart.trim() === nextProps.chart.trim() && prevProps.className === nextProps.className
 })

@@ -1,58 +1,101 @@
 "use client"
 
-import { useState, useCallback } from "react"
+import { useState } from "react"
 import { useRouter } from "next/navigation"
-import { ChatInput } from "@/components"
-import { useChatContext } from "@/contexts/chat-context"
-import { generateId } from "@/lib/types"
+import { MissionIntake } from "@/components/mission-intake"
+import { DocumentPicker } from "@/components/document-picker"
+import {
+  Mission,
+  Deliverable,
+  DeliverableType,
+  AVAILABLE_DELIVERABLES,
+  getWorkflowById,
+} from "@/lib/bmad-types"
 
-export default function NewProjectPage() {
+type IntakeData = {
+  name: string
+  description: string
+  industry?: string
+  techStack?: string
+}
+
+export default function NewMissionPage() {
   const router = useRouter()
-  const { createSession, updateSession } = useChatContext()
-  const [isSubmitting, setIsSubmitting] = useState(false)
+  const [stage, setStage] = useState<"intake" | "picker">("intake")
+  const [intakeData, setIntakeData] = useState<IntakeData | null>(null)
 
-  const handleSend = useCallback(async (content: string) => {
-    setIsSubmitting(true)
+  const handleIntakeSubmit = (data: IntakeData) => {
+    setIntakeData(data)
+    setStage("picker")
+  }
 
-    // Create a new chat session
-    const session = createSession(content)
+  const handlePickerConfirm = (selectedTypes: DeliverableType[], inputDocs: File[]) => {
+    if (!intakeData) return
 
-    // Add user message to session
-    const userMessage = {
-      id: generateId(),
-      role: "user" as const,
-      content,
+    // Create deliverables from selected types
+    const deliverables: Deliverable[] = selectedTypes.map((type, index) => {
+      const template = AVAILABLE_DELIVERABLES.find((d) => d.type === type)!
+      const workflow = getWorkflowById(template.workflowId)
+
+      // Create tasks from workflow areas
+      const tasks = workflow?.areas.map((area, i) => ({
+        id: `task-${index}-${i}`,
+        name: area,
+        status: "pending" as const,
+      })) || []
+
+      return {
+        id: `deliverable-${Date.now()}-${index}`,
+        type,
+        workflowId: template.workflowId,
+        name: template.name,
+        description: template.description,
+        status: index === 0 ? "in-progress" : "queued",
+        progress: 0,
+        tasks,
+      }
+    })
+
+    // Create mission
+    const missionId = `mission-${Date.now()}`
+    const mission: Mission = {
+      id: missionId,
+      name: intakeData.name,
+      mode: "new-build",
+      description: intakeData.description,
       createdAt: Date.now(),
+      updatedAt: Date.now(),
+      currentPhase: "1-analysis",
+      currentWorkflow: deliverables[0]?.workflowId || null,
+      currentDeliverable: deliverables[0]?.id || null,
+      context: {
+        industry: intakeData.industry,
+        techStack: intakeData.techStack,
+      },
+      artifacts: [],
+      deliverables,
+      inputDocuments: inputDocs.map((f) => f.name),
+      sessionId: `session-${Date.now()}`,
     }
-    updateSession(session.id, { messages: [userMessage] })
 
-    // Navigate to chat page
-    router.push(`/chat/${session.id}`)
-  }, [createSession, updateSession, router])
+    // Store in localStorage
+    const existing = JSON.parse(localStorage.getItem("missions") || "[]")
+    localStorage.setItem("missions", JSON.stringify([...existing, mission]))
 
-  const handleAction = (action: string) => {
-    // Handle upload, image actions
+    // Navigate to workspace
+    router.push(`/missions/${missionId}`)
+  }
+
+  const handlePickerCancel = () => {
+    setStage("intake")
   }
 
   return (
-    <div className="flex flex-col items-center justify-center h-full p-4 -mt-20">
-      {/* Greeting */}
-      <h1 className="text-2xl sm:text-3xl md:text-4xl font-medium text-center mb-8">
-        Where should we begin?
-      </h1>
-
-      {/* Chat Input */}
-      <div className="w-full max-w-3xl">
-        <ChatInput
-          onSend={handleSend}
-          onAction={handleAction}
-          placeholder="Describe your project idea..."
-          disabled={isSubmitting}
-        />
-        <p className="text-center text-xs text-muted-foreground/60 mt-3">
-          Jarvis can make mistakes. Verify important information.
-        </p>
-      </div>
-    </div>
+    <>
+      {stage === "intake" && <MissionIntake onSubmit={handleIntakeSubmit} />}
+      {stage === "picker" && (
+        <DocumentPicker onConfirm={handlePickerConfirm} onCancel={handlePickerCancel} />
+      )}
+    </>
   )
 }

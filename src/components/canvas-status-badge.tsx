@@ -36,13 +36,16 @@ const statusConfig: Record<
 }
 
 export function CanvasStatusBadge({ status, className }: CanvasStatusBadgeProps) {
-  const config = statusConfig[status]
+  const config = statusConfig[status] || statusConfig.awaiting_approval
+  if (!statusConfig[status]) {
+    console.warn("[CanvasStatusBadge] Unknown status:", status)
+  }
   const Icon = config.icon
 
   return (
     <div
       className={cn(
-        "inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-medium",
+        "inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-medium whitespace-nowrap",
         config.color,
         className
       )}

@@ -20,9 +20,10 @@ export const useSidebar = () => useContext(SidebarContext)
 
 interface AppShellProps {
   children: React.ReactNode
+  hideSidebar?: boolean
 }
 
-export function AppShell({ children }: AppShellProps) {
+export function AppShell({ children, hideSidebar = false }: AppShellProps) {
   const [sidebarOpen, setSidebarOpen] = useState(true)
 
   const toggleSidebar = useCallback(() => {
@@ -51,9 +52,11 @@ export function AppShell({ children }: AppShellProps) {
   return (
     <SidebarContext.Provider value={{ isOpen: sidebarOpen, toggle: toggleSidebar }}>
       <div className="flex h-screen">
-        <ErrorBoundary>
-          <Sidebar isOpen={sidebarOpen} onToggle={toggleSidebar} />
-        </ErrorBoundary>
+        {!hideSidebar && (
+          <ErrorBoundary>
+            <Sidebar isOpen={sidebarOpen} onToggle={toggleSidebar} />
+          </ErrorBoundary>
+        )}
 
         <main className="flex-1 overflow-auto" role="main">
           <ErrorBoundary>{children}</ErrorBoundary>

@@ -8,6 +8,21 @@ interface UseChatOptions {
   onFinish?: (message: Message) => void
 }
 
+// Get user token from localStorage
+function getUserToken(): string | null {
+  if (typeof window === "undefined") return null
+  try {
+    const stored = localStorage.getItem("mc_user")
+    if (stored) {
+      const parsed = JSON.parse(stored)
+      return parsed.token || null
+    }
+  } catch {
+    // Ignore parse errors
+  }
+  return null
+}
+
 export function useChat(options: UseChatOptions = {}) {
   const [messages, setMessages] = useState<Message[]>(options.initialMessages || [])
   const [isLoading, setIsLoading] = useState(false)
@@ -38,6 +53,9 @@ export function useChat(options: UseChatOptions = {}) {
     try {
       abortControllerRef.current = new AbortController()
 
+      // Include user token for per-user session isolation
+      const userToken = getUserToken()
+
       const response = await fetch("/api/chat", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
@@ -46,6 +64,7 @@ export function useChat(options: UseChatOptions = {}) {
             role: m.role,
             content: m.content,
           })),
+          userToken, // Pass user token for session isolation
         }),
         signal: abortControllerRef.current.signal,
       })
@@ -93,6 +112,9 @@ export function useChat(options: UseChatOptions = {}) {
 
       const finalMessage = { ...assistantMessage, content: fullContent }
       options.onFinish?.(finalMessage)
+
+      // Dispatch event for context indicator to refresh
+      window.dispatchEvent(new CustomEvent("chat-message-sent"))
     } catch (err) {
       if (err instanceof Error && err.name === "AbortError") {
         // Ignore abort errors

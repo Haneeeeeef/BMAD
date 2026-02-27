@@ -39,45 +39,8 @@ export interface Activity {
   message: string
 }
 
-// Mock Projects
-export const mockProjects: Project[] = [
-  {
-    id: "inventory-tracker",
-    code: "INV-01",
-    name: "Inventory Tracker",
-    client: "Acme Corp",
-    description: "Real-time inventory management for 50 warehouses with barcode scanning",
-    status: "running",
-    currentStage: "Architecture",
-    progress: 45,
-    agentCount: 3,
-    createdAt: "2024-01-15",
-  },
-  {
-    id: "crm-portal",
-    code: "CRM-01",
-    name: "CRM Portal",
-    client: "TechStart",
-    description: "Customer relationship management with sales pipeline tracking",
-    status: "waiting",
-    currentStage: "PRD Review",
-    progress: 25,
-    agentCount: 0,
-    createdAt: "2024-01-14",
-  },
-  {
-    id: "mobile-app",
-    code: "MOB-01",
-    name: "Mobile App",
-    client: "Acme Corp",
-    description: "Cross-platform mobile app for field technicians",
-    status: "pending",
-    currentStage: "Not Started",
-    progress: 0,
-    agentCount: 0,
-    createdAt: "2024-01-13",
-  },
-]
+// Projects - populated when real projects are created
+export const mockProjects: Project[] = []
 
 // Mock Stages for a project
 export const mockStages: Stage[] = [
@@ -141,11 +104,4 @@ export interface Chat {
   projectId?: string
 }
 
-export const mockChats: Chat[] = [
-  { id: "chat-1", title: "Build inventory tracking system", createdAt: "Today", projectId: "inventory-tracker" },
-  { id: "chat-2", title: "CRM portal requirements", createdAt: "Today", projectId: "crm-portal" },
-  { id: "chat-3", title: "Mobile app architecture discussion", createdAt: "Yesterday" },
-  { id: "chat-4", title: "Database design for warehouse", createdAt: "Yesterday" },
-  { id: "chat-5", title: "API integration strategy", createdAt: "Previous 7 Days" },
-  { id: "chat-6", title: "Authentication flow planning", createdAt: "Previous 7 Days" },
-]
+export const mockChats: Chat[] = []

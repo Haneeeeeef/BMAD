@@ -1,79 +1,52 @@
-// Re-export all custom components for easy importing
-// Usage: import { SearchBar, MultiSelect, ... } from "@/components"
-
-// Forms & Inputs
-export { TextInput } from "./text-input"
-export { SearchBar } from "./search-bar"
-export { MultiSelect } from "./multi-select"
-export { FilterSelect } from "./filter-select"
-export { FileUpload } from "./file-upload"
-export { ChatInput, type ChatInputHandle } from "./chat-input"
-
-// Buttons
-export { BrandButton } from "./brand-button"
-
-// Search
-export { ChatSearch, type SearchItem } from "./chat-search"
-
-// Actions
-export { RowActions } from "./row-actions"
-
-// Data Display
-export { DataTable, createSortableHeader } from "./data-table"
-export { DocumentViewer } from "./document-viewer"
+// Barrel exports for components
 export { ActivityFeed } from "./activity-feed"
 export { ActivityItem } from "./activity-item"
-
-// Cards
-export { StageCard } from "./stage-card"
+export { AgentAvatar } from "./agent-avatar"
 export { AgentCard } from "./agent-card"
-export { StatCard } from "./stat-card"
-
-// Diagrams
-export { ExcalidrawDiagram } from "./excalidraw-diagram"
-export { MermaidDiagram } from "./mermaid-diagram"
-
-// Status & Visual
-export { StatusBadge, type Status } from "./status-badge"
-export { StatusText, type StatusType } from "./status-text"
-export { StageBadge } from "./stage-badge"
-export { AgentAvatar, AgentAvatarGroup } from "./agent-avatar"
-export { ArtifactIcon, getFileType } from "./artifact-icon"
-export { ExportButton } from "./export-button"
-
-// Layout & Navigation
-export { TopNav } from "./top-nav"
-export { PageHeader } from "./page-header"
-export { Sidebar, SidebarItem, SidebarSection } from "./sidebar"
-export { TabNav, type Tab } from "./tab-nav"
-
-// Modals & Dialogs
-export { ResponsiveModal } from "./responsive-modal"
-export { DetailSheet } from "./detail-sheet"
-export { ConfirmDialog } from "./confirm-dialog"
-
-// Feedback
-export { EmptyState } from "./empty-state"
-export {
-  SkeletonCard,
-  ProjectCardSkeleton,
-  StageCardSkeleton,
-  ActivitySkeleton,
-  StatsSkeleton,
-  PageSkeleton,
-} from "./skeleton-card"
-
-// Chat
-export { ChatMessage } from "./chat-message"
-
-// Canvas
-export { DiscoveryCanvas } from "./discovery-canvas"
-export { CanvasStatusBadge } from "./canvas-status-badge"
-export { CanvasSectionNav } from "./canvas-section-nav"
-
-// App Shell & Error Handling
 export { AppShell } from "./app-shell"
+export { ArtifactIcon } from "./artifact-icon"
+export { BackButton } from "./back-button"
+export { BrandButton } from "./brand-button"
+export { CanvasSectionNav } from "./canvas-section-nav"
+export { CanvasStatusBadge } from "./canvas-status-badge"
+export { ChatInput, type ChatInputHandle } from "./chat-input"
+export { ChatMessage } from "./chat-message"
+export { ChatSearch, type SearchItem } from "./chat-search"
+export { ConfirmDialog } from "./confirm-dialog"
+export { DataTable } from "./data-table"
+export { DetailSheet } from "./detail-sheet"
+export { DiscoveryCanvas } from "./discovery-canvas"
+export { DocumentViewer } from "./document-viewer"
+export { EmptyState } from "./empty-state"
 export { ErrorBoundary } from "./error-boundary"
+export { ExcalidrawDiagram } from "./excalidraw-diagram"
+export { ExportButton } from "./export-button"
+export { FileUpload } from "./file-upload"
+export { FilterSelect } from "./filter-select"
+export { MermaidDiagram } from "./mermaid-diagram"
+export { MultiSelect } from "./multi-select"
+export { PageHeader } from "./page-header"
+export { ResponsiveModal } from "./responsive-modal"
+export { RowActions } from "./row-actions"
+export { SearchBar } from "./search-bar"
+export { SkeletonCard } from "./skeleton-card"
+export { StageBadge } from "./stage-badge"
+export { StageCard } from "./stage-card"
+export { StatCard } from "./stat-card"
+export { StatusBadge } from "./status-badge"
+export { StatusText } from "./status-text"
+export { TabNav } from "./tab-nav"
+export { TextInput } from "./text-input"
+export { TopNav } from "./top-nav"
 
-// Toast helper
-export { toast } from "sonner"
+// Re-export sidebar components
+export { Sidebar, SidebarItem, SidebarSection } from "./sidebar"
+
+// Workflow components
+export { WorkflowPicker } from "./workflow-picker"
+
+// Mission workspace components
+export { MissionIntake } from "./mission-intake"
+export { DocumentPicker } from "./document-picker"
+export { MissionWorkspace } from "./mission-workspace"
+export { ValidationPanel } from "./validation-panel"

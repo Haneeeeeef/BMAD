@@ -10,6 +10,8 @@ import { ChatSearch, type SearchItem } from "@/components"
 import { PenSquare, Search, FolderKanban, Settings, PanelLeftClose, PanelLeft } from "lucide-react"
 import { mockProjects } from "@/lib/mock-data"
 import { useChatContext } from "@/contexts/chat-context"
+import { useActiveSessions } from "@/hooks/use-active-sessions"
+import { toast } from "sonner"
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip"
 
 interface SidebarProps {
@@ -20,7 +22,33 @@ interface SidebarProps {
 
 export function Sidebar({ isOpen = true, onToggle, className }: SidebarProps) {
   const [searchOpen, setSearchOpen] = useState(false)
-  const { sessions } = useChatContext()
+  const { deleteSession } = useChatContext()
+  const activeSessions = useActiveSessions() // Excludes sessions converted to projects
+
+  // Handle delete with VPS cleanup
+  const handleDeleteSession = useCallback(async (sessionId: string) => {
+    try {
+      // Delete from VPS
+      await fetch('/api/session/delete', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ sessionId })
+      })
+
+      // Delete from localStorage
+      deleteSession(sessionId)
+
+      // Clear canvas data
+      localStorage.removeItem(`canvas-${sessionId}`)
+
+      // Clear agent completions
+      localStorage.removeItem(`agent_completions_${sessionId}`)
+
+      toast.success('Chat deleted')
+    } catch {
+      toast.error('Failed to delete')
+    }
+  }, [deleteSession])
 
   // Memoized handler to open search
   const handleOpenSearch = useCallback(() => setSearchOpen(true), [])
@@ -43,14 +71,26 @@ export function Sidebar({ isOpen = true, onToggle, className }: SidebarProps) {
             className
           )}
         >
-          {/* Logo */}
-          <div className="flex items-center justify-center pt-3 pb-1">
+          {/* Logo with expand on hover */}
+          <div className="group relative flex items-center justify-center pt-3 pb-1">
             <Link
               href="/new"
               className="h-8 w-8 rounded-lg bg-[#00415a] flex items-center justify-center hover:opacity-90 transition-opacity"
             >
               <span className="text-white font-bold text-sm">M</span>
             </Link>
+            {onToggle && (
+              <button
+                onClick={(e) => {
+                  e.preventDefault()
+                  onToggle()
+                }}
+                aria-label="Expand sidebar"
+                className="absolute inset-0 flex items-center justify-center bg-muted/90 rounded-lg opacity-0 group-hover:opacity-100 transition-opacity"
+              >
+                <PanelLeft className="h-4 w-4 text-foreground" strokeWidth={1.75} />
+              </button>
+            )}
           </div>
 
           {/* Icon Navigation */}
@@ -168,10 +208,14 @@ export function Sidebar({ isOpen = true, onToggle, className }: SidebarProps) {
 
         {/* In Progress Projects */}
         <div className="flex-1 overflow-y-auto px-2 pb-3">
-          {sessions.length > 0 && (
+          {activeSessions.length > 0 && (
             <SidebarSection title="In Progress Projects">
-              {sessions.map((session) => (
-                <SidebarItem key={session.id} href={`/chat/${session.id}`}>
+              {activeSessions.map((session) => (
+                <SidebarItem
+                  key={session.id}
+                  href={`/chat/${session.id}`}
+                  onDelete={() => handleDeleteSession(session.id)}
+                >
                   {session.title}
                 </SidebarItem>
               ))}

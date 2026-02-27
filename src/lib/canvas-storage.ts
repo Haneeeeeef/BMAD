@@ -195,45 +195,19 @@ export function saveDocument(sessionId: string, input: SaveDocumentInput): Canva
       existingDoc.activeVersion = 1
     }
 
-    const currentVersion = getCurrentVersion(existingDoc)
-    // Normalize content for comparison (trim whitespace)
-    const normalizedNewContent = input.content.trim()
-    const normalizedOldContent = (currentVersion?.content || "").trim()
-    const contentChanged = normalizedOldContent !== normalizedNewContent
+    // Always create a new version (versioning handled by us, not AI)
+    const newVersionNum = getLatestVersion(existingDoc) + 1
 
-    console.log("[Canvas] saveDocument:", {
-      identifier: input.identifier,
-      contentChanged,
-      oldLength: normalizedOldContent.length,
-      newLength: normalizedNewContent.length,
-      currentVersion: currentVersion?.version,
-      totalVersions: existingDoc.versions.length,
+    existingDoc.versions.push({
+      version: newVersionNum,
+      content: input.content,
+      status: input.status,
+      createdAt: now,
+      agent: input.agent,
     })
-
-    if (contentChanged) {
-      // Content changed - add new version
-      const newVersionNum = input.version || (getLatestVersion(existingDoc) + 1)
-      existingDoc.versions.push({
-        version: newVersionNum,
-        content: input.content,
-        status: input.status,
-        createdAt: now,
-        agent: input.agent,
-      })
-      existingDoc.activeVersion = newVersionNum
-      existingDoc.title = input.title // Update title if changed
-      existingDoc.updatedAt = now
-      console.log("[Canvas] Created new version:", newVersionNum)
-    } else {
-      // Content same - just update metadata on current version
-      if (currentVersion) {
-        currentVersion.status = input.status
-        if (input.agent) currentVersion.agent = input.agent
-      }
-      existingDoc.title = input.title
-      existingDoc.updatedAt = now
-      console.log("[Canvas] Content unchanged, updated metadata only")
-    }
+    existingDoc.activeVersion = newVersionNum
+    existingDoc.title = input.title
+    existingDoc.updatedAt = now
   } else {
     // New document - create with version 1
     canvas.documents.push({
@@ -262,8 +236,40 @@ export function saveDocument(sessionId: string, input: SaveDocumentInput): Canva
   return canvas
 }
 
-// Approve a specific document (approves the active version)
+// Approve a specific document (approves the LATEST version only)
 export function approveDocument(sessionId: string, identifier: string): CanvasData | null {
+  const canvas = loadCanvas(sessionId)
+  if (!canvas) return null
+
+  const doc = canvas.documents.find(d => d.identifier === identifier)
+  if (!doc || !doc.versions.length) return null
+
+  // Always approve the latest version
+  const latestVersionNum = getLatestVersion(doc)
+  const latestVersion = doc.versions.find(v => v.version === latestVersionNum)
+
+  if (latestVersion) {
+    latestVersion.status = "approved"
+    latestVersion.approvedAt = Date.now()
+
+    // Mark all older versions as superseded (can't be approved)
+    doc.versions.forEach(v => {
+      if (v.version < latestVersionNum && v.status === "awaiting_approval") {
+        v.status = "draft" // Superseded - no longer awaiting approval
+      }
+    })
+
+    // Switch to the approved version
+    doc.activeVersion = latestVersionNum
+  }
+  doc.updatedAt = Date.now()
+
+  saveCanvasData(canvas)
+  return canvas
+}
+
+// Unapprove a specific document (reverts to awaiting_approval)
+export function unapproveDocument(sessionId: string, identifier: string): CanvasData | null {
   const canvas = loadCanvas(sessionId)
   if (!canvas) return null
 
@@ -271,9 +277,9 @@ export function approveDocument(sessionId: string, identifier: string): CanvasDa
   if (!doc) return null
 
   const version = getCurrentVersion(doc)
-  if (version) {
-    version.status = "approved"
-    version.approvedAt = Date.now()
+  if (version && version.status === "approved") {
+    version.status = "awaiting_approval"
+    delete version.approvedAt
   }
   doc.updatedAt = Date.now()
 

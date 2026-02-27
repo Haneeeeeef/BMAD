@@ -2,8 +2,9 @@ import type { Metadata } from "next"
 import "./globals.css"
 import { TooltipProvider } from "@/components/ui/tooltip"
 import { Toaster } from "@/components/ui/sonner"
-import { AppShell } from "@/components/app-shell"
 import { ChatProvider } from "@/contexts/chat-context"
+import { AuthProvider } from "@/contexts/auth-context"
+import { AuthenticatedLayout } from "@/components/authenticated-layout"
 
 export const metadata: Metadata = {
   title: "Mission Control | BMAD",
@@ -20,8 +21,10 @@ export default function RootLayout({
       <body className="antialiased">
         <ChatProvider>
           <TooltipProvider>
-            <AppShell>{children}</AppShell>
-            <Toaster position="top-right" richColors expand={false} />
+            <AuthProvider>
+              <AuthenticatedLayout>{children}</AuthenticatedLayout>
+            </AuthProvider>
+            <Toaster position="top-right" closeButton expand={false} />
           </TooltipProvider>
         </ChatProvider>
       </body>

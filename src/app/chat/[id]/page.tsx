@@ -3,16 +3,19 @@
 import { useEffect, useRef, useState, useCallback } from "react"
 import { useParams, useRouter } from "next/navigation"
 import { useChatContext } from "@/contexts/chat-context"
+import { useAuth } from "@/contexts/auth-context"
+import { ContextIndicator } from "@/components/context-indicator"
 import { ChatInput, ChatInputHandle } from "@/components"
 import { ChatMessage } from "@/components/chat-message"
 import { Message, Attachment, generateId } from "@/lib/types"
-import { Loader2, ChevronDown, UserRoundPlus, MoreHorizontal, Archive, Trash2, Pencil, FileText, Share2, Mail, Link2, FileDown } from "lucide-react"
+import { Loader2, ChevronDown, UserRoundPlus, MoreHorizontal, Archive, Trash2, Pencil, FileText, Share2, Mail, Link2, FileDown, RefreshCcw } from "lucide-react"
 import { toast } from "sonner"
 
 // Import canvas component (Excalidraw inside is already lazy loaded)
 import { DiscoveryCanvas } from "@/components/discovery-canvas"
 import { CanvasStatus } from "@/lib/canvas-types"
-import { loadCanvas, saveDocument, approveDocument, setActiveDocument, removeDocument, setDocumentVersion, getSessionContext, type CanvasData, type CanvasDocument } from "@/lib/canvas-storage"
+import { loadCanvas, saveDocument, setActiveDocument, removeDocument, setDocumentVersion, getSessionContext, type CanvasData, type CanvasDocument } from "@/lib/canvas-storage"
+import { useApproval } from "@/hooks"
 
 // Parse artifact tag attributes
 function parseArtifactAttributes(attrString: string): Record<string, string> {
@@ -131,14 +134,16 @@ import {
   DropdownMenuSubContent,
   DropdownMenuSeparator,
 } from "@/components/ui/dropdown-menu"
+import { ConfirmDialog } from "@/components"
 
 export default function ChatPage() {
   const params = useParams()
   const router = useRouter()
   const sessionId = params.id as string
-  const { getSession, updateSession } = useChatContext()
+  const { getSession, updateSession, deleteSession, isLoaded } = useChatContext()
   const session = getSession(sessionId)
   const { isOpen: sidebarOpen } = useSidebar()
+  const { user } = useAuth()
 
   const [messages, setMessages] = useState<Message[]>([])
   const [isLoading, setIsLoading] = useState(false)
@@ -301,12 +306,13 @@ export default function ChatPage() {
     lastScrollTop.current = currentScrollTop
   }, [])
 
-  // Redirect if session doesn't exist
+  // Redirect if session doesn't exist (only after sessions are loaded)
+  const shouldRedirect = isLoaded && !session && !!sessionId
   useEffect(() => {
-    if (!session && sessionId) {
+    if (shouldRedirect) {
       router.push("/new")
     }
-  }, [session, sessionId, router])
+  }, [shouldRedirect, router])
 
   // Auto-trigger AI response if last message is from user (initial load)
   useEffect(() => {
@@ -351,7 +357,9 @@ export default function ChatPage() {
             role: m.role,
             content: m.content,
           })),
+          sessionId,
           canvasStatus: sessionContext,
+          userToken: user?.token,
         }),
         signal: abortControllerRef.current.signal,
       })
@@ -417,7 +425,12 @@ export default function ChatPage() {
       const { artifacts, cleanedContent } = extractArtifacts(fullContent)
       if (artifacts.length > 0) {
         let latestCanvas: CanvasData | null = null
+        const previousCanvas = loadCanvas(sessionId)
+
         for (const artifact of artifacts) {
+          const prevDoc = previousCanvas?.documents.find(d => d.identifier === artifact.identifier)
+          const prevVersionCount = prevDoc?.versions?.length || 0
+
           latestCanvas = saveDocument(sessionId, {
             identifier: artifact.identifier,
             title: artifact.title,
@@ -427,6 +440,7 @@ export default function ChatPage() {
             agent: artifact.agent,
             version: artifact.version,
           })
+
         }
         if (latestCanvas) {
           setCanvasData(latestCanvas)
@@ -445,6 +459,9 @@ export default function ChatPage() {
       if (currentMessages.length === 1 && currentMessages[0].role === "user") {
         generateTitle(currentMessages[0].content, fullContent)
       }
+
+      // Refresh context indicator
+      window.dispatchEvent(new CustomEvent("chat-message-sent"))
     } catch (err) {
       if (err instanceof Error && err.name === "AbortError") return
       setMessages((prev) => prev.filter((m) => m.id !== assistantMessage.id))
@@ -517,7 +534,9 @@ export default function ChatPage() {
               content: m.content,
               attachments: m.attachments,
             })),
+            sessionId,
             canvasStatus: sessionContext,
+            userToken: user?.token,
           }),
           signal: abortControllerRef.current.signal,
         })
@@ -583,7 +602,12 @@ export default function ChatPage() {
         const { artifacts, cleanedContent } = extractArtifacts(fullContent)
         if (artifacts.length > 0) {
           let latestCanvas: CanvasData | null = null
+          const previousCanvas = loadCanvas(sessionId)
+
           for (const artifact of artifacts) {
+            const prevDoc = previousCanvas?.documents.find(d => d.identifier === artifact.identifier)
+            const prevVersionCount = prevDoc?.versions?.length || 0
+
             latestCanvas = saveDocument(sessionId, {
               identifier: artifact.identifier,
               title: artifact.title,
@@ -611,6 +635,9 @@ export default function ChatPage() {
         if (messages.length === 0) {
           generateTitle(userMessage.content, fullContent)
         }
+
+        // Refresh context indicator
+        window.dispatchEvent(new CustomEvent("chat-message-sent"))
       } catch (err) {
         if (err instanceof Error && err.name === "AbortError") return
         // Remove empty assistant message on error
@@ -621,16 +648,24 @@ export default function ChatPage() {
         abortControllerRef.current = null
       }
     },
-    [messages, sessionId, updateSession]
+    [messages, sessionId, updateSession, user]
   )
 
+  // Use reusable approval hook
+  const { approve } = useApproval({
+    sessionId,
+    onUpdate: setCanvasData,
+  })
+
+  // Handle approval with redirect to project
   const handleCanvasApprove = useCallback((identifier: string) => {
-    // Save approval to localStorage
-    const updated = approveDocument(sessionId, identifier)
-    if (updated) {
-      setCanvasData(updated)
+    const result = approve(identifier)
+    if (result.project) {
+      // Redirect to project page with autoChat to continue conversation
+      const url = `/projects/${result.project.id}?autoChat=true&docTitle=${encodeURIComponent(result.documentTitle || '')}`
+      router.push(url)
     }
-  }, [sessionId])
+  }, [approve, router])
 
   const handleDocumentSelect = useCallback((identifier: string) => {
     setActiveDocumentId(identifier)
@@ -638,11 +673,11 @@ export default function ChatPage() {
   }, [sessionId])
 
   const handleDocumentClose = useCallback((identifier: string) => {
+    // Delete the document and all its versions
     const updated = removeDocument(sessionId, identifier)
     if (updated) {
       setCanvasData(updated)
       setActiveDocumentId(updated.activeDocumentId)
-      // Close canvas if no documents left
       if (updated.documents.length === 0) {
         setShowCanvas(false)
       }
@@ -686,6 +721,73 @@ export default function ChatPage() {
     // Use browser print dialog for PDF
     window.print()
   }, [])
+
+  // Flush memory handler - triggers Jarvis to write context to memory file
+  const [isFlushing, setIsFlushing] = useState(false)
+  const handleFlushMemory = useCallback(async () => {
+    setShowFlushDialog(false)
+    setIsFlushing(true)
+    try {
+      const response = await fetch('/api/session/clear', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ action: 'flush_and_clear', sessionId, userToken: user?.token })
+      })
+      const data = await response.json()
+      if (data.success) {
+        toast.success('Memory flushed to disk')
+        // Refresh context indicator
+        window.dispatchEvent(new CustomEvent("chat-message-sent"))
+      } else {
+        toast.error('Failed to flush memory')
+      }
+    } catch {
+      toast.error('Failed to flush memory')
+    } finally {
+      setIsFlushing(false)
+    }
+  }, [sessionId, user?.token])
+
+  // Delete chat handler - deletes session from VPS, localStorage, and canvas
+  const [isDeleting, setIsDeleting] = useState(false)
+  const [showDeleteDialog, setShowDeleteDialog] = useState(false)
+  const [showFlushDialog, setShowFlushDialog] = useState(false)
+
+  const handleDeleteChat = useCallback(async () => {
+    setShowDeleteDialog(false)
+    setIsDeleting(true)
+    try {
+      // Delete from VPS session service
+      const response = await fetch('/api/session/delete', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ sessionId })
+      })
+
+      const data = await response.json()
+
+      // Delete from localStorage (chat context)
+      deleteSession(sessionId)
+
+      // Clear canvas data for this session
+      localStorage.removeItem(`canvas-${sessionId}`)
+
+      // Clear agent completions for this session
+      localStorage.removeItem(`agent_completions_${sessionId}`)
+
+      toast.success('Chat deleted')
+
+      // Refresh context indicator
+      window.dispatchEvent(new CustomEvent("chat-message-sent"))
+
+      // Navigate to new chat
+      router.push('/new')
+    } catch {
+      toast.error('Failed to delete chat')
+    } finally {
+      setIsDeleting(false)
+    }
+  }, [sessionId, deleteSession, router])
 
   // Canvas resize handlers
   const handleResizeStart = useCallback((e: React.MouseEvent) => {
@@ -737,7 +839,7 @@ export default function ChatPage() {
         style={{ marginRight: showCanvas ? canvasWidth : 0 }}
       >
       {/* Floating corner controls */}
-      <div className={`fixed top-3 z-10 transition-all duration-200`} style={{ left: `calc(${sidebarWidth} + 1rem)` }}>
+      <div className={`fixed top-3 z-10 transition-all duration-200 flex items-center gap-2`} style={{ left: `calc(${sidebarWidth} + 1rem)` }}>
         <DropdownMenu>
           <DropdownMenuTrigger asChild>
             <button className="flex items-center gap-1 text-[18px] font-medium hover:bg-muted/80 rounded-lg px-2 py-1 transition-colors bg-background/80 backdrop-blur-sm" aria-label="Select agent">
@@ -749,6 +851,7 @@ export default function ChatPage() {
             <DropdownMenuItem>Jarvis</DropdownMenuItem>
           </DropdownMenuContent>
         </DropdownMenu>
+        <ContextIndicator />
       </div>
 
       {/* Header controls */}
@@ -799,6 +902,11 @@ export default function ChatPage() {
               Export PDF
             </DropdownMenuItem>
             <DropdownMenuSeparator />
+            <DropdownMenuItem onClick={() => setShowFlushDialog(true)} disabled={isFlushing}>
+              <RefreshCcw className={`h-4 w-4 mr-2 ${isFlushing ? 'animate-spin' : ''}`} />
+              {isFlushing ? 'Flushing...' : 'Flush Memory'}
+            </DropdownMenuItem>
+            <DropdownMenuSeparator />
             <DropdownMenuItem>
               <Pencil className="h-4 w-4 mr-2" />
               Rename
@@ -807,9 +915,9 @@ export default function ChatPage() {
               <Archive className="h-4 w-4 mr-2" />
               Archive
             </DropdownMenuItem>
-            <DropdownMenuItem className="text-destructive">
-              <Trash2 className="h-4 w-4 mr-2" />
-              Delete
+            <DropdownMenuItem className="text-destructive" onClick={() => setShowDeleteDialog(true)} disabled={isDeleting}>
+              <Trash2 className={`h-4 w-4 mr-2 ${isDeleting ? 'animate-pulse' : ''}`} />
+              {isDeleting ? 'Deleting...' : 'Delete'}
             </DropdownMenuItem>
           </DropdownMenuContent>
         </DropdownMenu>
@@ -877,6 +985,29 @@ export default function ChatPage() {
           onClose={handleCanvasClose}
         />
       </div>
+
+      {/* Delete Chat Confirmation Dialog */}
+      <ConfirmDialog
+        open={showDeleteDialog}
+        onOpenChange={setShowDeleteDialog}
+        title="Delete Chat"
+        description="This will permanently delete this chat and remove its context from the server. This action cannot be undone."
+        confirmLabel="Delete"
+        variant="destructive"
+        onConfirm={handleDeleteChat}
+        loading={isDeleting}
+      />
+
+      {/* Flush Memory Confirmation Dialog */}
+      <ConfirmDialog
+        open={showFlushDialog}
+        onOpenChange={setShowFlushDialog}
+        title="Flush Memory"
+        description="This will save the current context to memory files on disk and clear the session. Jarvis will start fresh but retain learnings."
+        confirmLabel="Flush Memory"
+        onConfirm={handleFlushMemory}
+        loading={isFlushing}
+      />
     </div>
   )
 }
