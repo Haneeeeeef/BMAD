@@ -1,5 +1,7 @@
 export const runtime = "edge"
 
+import { requireAuth } from "@/lib/auth"
+
 // In-memory store (resets on deploy, but fine for MVP)
 // For production, use Redis or database
 const canvasStore = new Map<string, CanvasData>()
@@ -14,6 +16,9 @@ interface CanvasData {
 
 // POST /api/canvas - Jarvis pushes canvas content
 export async function POST(request: Request) {
+  const auth = requireAuth(request)
+  if (auth instanceof Response) return auth
+
   try {
     const data: CanvasData = await request.json()
 
@@ -44,6 +49,9 @@ export async function POST(request: Request) {
 
 // GET /api/canvas?sessionId=xxx - Frontend polls for canvas data
 export async function GET(request: Request) {
+  const authGet = requireAuth(request)
+  if (authGet instanceof Response) return authGet
+
   const url = new URL(request.url)
   const sessionId = url.searchParams.get("sessionId")
 

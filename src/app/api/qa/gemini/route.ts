@@ -2,6 +2,7 @@
 // Reviews deliverables separately from Jarvis for unbiased validation
 export const runtime = "edge"
 
+import { requireAuth } from "@/lib/auth"
 import { DeliverableType } from "@/lib/bmad-types"
 import { QA_CRITERIA } from "@/lib/qa-validation"
 
@@ -65,6 +66,9 @@ BEGIN VALIDATION NOW.`
 }
 
 export async function POST(request: Request) {
+  const auth = requireAuth(request)
+  if (auth instanceof Response) return auth
+
   const geminiKey = process.env.GEMINI_API_KEY
 
   if (!geminiKey) {

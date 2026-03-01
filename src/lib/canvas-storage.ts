@@ -1,4 +1,5 @@
 import { CanvasStatus } from "./canvas-types"
+import { safeGetItem, safeSetItem, safeRemoveItem } from "./safe-storage"
 
 // Single version of a document
 export interface DocumentVersion {
@@ -71,7 +72,7 @@ export function loadCanvas(sessionId: string): CanvasData | null {
 
   try {
     const key = getCanvasKey(sessionId)
-    const stored = localStorage.getItem(key)
+    const stored = safeGetItem(key)
     if (!stored) return null
 
     const parsed = JSON.parse(stored)
@@ -149,7 +150,7 @@ export function saveCanvasData(data: CanvasData): void {
 
   try {
     const key = getCanvasKey(data.sessionId)
-    localStorage.setItem(key, JSON.stringify({
+    safeSetItem(key, JSON.stringify({
       ...data,
       updatedAt: Date.now(),
     }))
@@ -195,9 +196,19 @@ export function saveDocument(sessionId: string, input: SaveDocumentInput): Canva
       existingDoc.activeVersion = 1
     }
 
-    // Always create a new version (versioning handled by us, not AI)
-    const newVersionNum = getLatestVersion(existingDoc) + 1
+    // Only create a new version if content actually changed
+    const latestVersion = existingDoc.versions.find(v => v.version === getLatestVersion(existingDoc))
+    if (latestVersion && latestVersion.content === input.content && latestVersion.status === input.status) {
+      // Content unchanged — skip version creation, just update title if needed
+      if (existingDoc.title !== input.title) {
+        existingDoc.title = input.title
+        existingDoc.updatedAt = now
+        saveCanvasData(canvas)
+      }
+      return canvas
+    }
 
+    const newVersionNum = getLatestVersion(existingDoc) + 1
     existingDoc.versions.push({
       version: newVersionNum,
       content: input.content,
@@ -354,7 +365,7 @@ export function deleteCanvas(sessionId: string): void {
 
   try {
     const key = getCanvasKey(sessionId)
-    localStorage.removeItem(key)
+    safeRemoveItem(key)
   } catch {
     console.error("Failed to delete canvas from localStorage")
   }
@@ -390,7 +401,7 @@ export function loadAgentCompletions(sessionId: string): AgentCompletion[] {
 
   try {
     const key = getCompletionsKey(sessionId)
-    const stored = localStorage.getItem(key)
+    const stored = safeGetItem(key)
     if (!stored) return []
     return JSON.parse(stored) as AgentCompletion[]
   } catch {
@@ -414,7 +425,7 @@ export function addAgentCompletion(
       acknowledged: false,
     })
     const key = getCompletionsKey(sessionId)
-    localStorage.setItem(key, JSON.stringify(completions))
+    safeSetItem(key, JSON.stringify(completions))
   } catch {
     console.error("Failed to save agent completion")
   }
@@ -429,7 +440,7 @@ export function acknowledgeCompletion(sessionId: string, agentId: string): void 
       c.agentId === agentId ? { ...c, acknowledged: true } : c
     )
     const key = getCompletionsKey(sessionId)
-    localStorage.setItem(key, JSON.stringify(updated))
+    safeSetItem(key, JSON.stringify(updated))
   } catch {
     console.error("Failed to acknowledge completion")
   }

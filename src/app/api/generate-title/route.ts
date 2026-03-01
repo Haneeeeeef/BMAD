@@ -1,11 +1,16 @@
 export const runtime = "edge"
 
+import { requireAuth } from "@/lib/auth"
+
 interface TitleRequest {
   userMessage: string
   assistantMessage?: string
 }
 
 export async function POST(request: Request) {
+  const auth = requireAuth(request)
+  if (auth instanceof Response) return auth
+
   const kimiApiKey = process.env.KIMI_API_KEY
 
   try {

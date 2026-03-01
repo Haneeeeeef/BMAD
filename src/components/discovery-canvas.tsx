@@ -24,6 +24,7 @@ import type { CanvasDocument, DocumentVersion } from "@/lib/canvas-storage"
 import { getCurrentVersion, getLatestVersion } from "@/lib/canvas-storage"
 import { ChevronLeft, ChevronRight } from "lucide-react"
 import { ApprovalModal } from "@/components/approval-modal"
+import { ConfirmDialog } from "@/components/confirm-dialog"
 
 // Check if document type is a diagram
 function isDiagramType(type: string): boolean {
@@ -64,6 +65,8 @@ export function DiscoveryCanvas({
   className,
 }: DiscoveryCanvasProps) {
   const [showApprovalModal, setShowApprovalModal] = React.useState(false)
+  const [showRemoveDialog, setShowRemoveDialog] = React.useState(false)
+  const [removeTarget, setRemoveTarget] = React.useState<CanvasDocument | null>(null)
   const activeDoc = documents.find(d => d.identifier === activeDocumentId) || documents[0]
   const currentVersion = activeDoc ? getCurrentVersion(activeDoc) : undefined
   const latestVersionNum = activeDoc ? getLatestVersion(activeDoc) : 1
@@ -349,6 +352,48 @@ export function DiscoveryCanvas({
         </div>
       </div>
 
+      {/* Document tabs - shown when multiple documents */}
+      {documents.length > 1 && (
+        <div className="flex items-center gap-1 px-2 py-1.5 border-b overflow-x-auto bg-muted/20">
+          {documents.map((doc) => {
+            const Icon = getDocumentIcon(doc.type)
+            const isActive = doc.identifier === activeDocumentId
+            return (
+              <div
+                key={doc.identifier}
+                className={cn(
+                  "group flex items-center gap-1.5 px-2.5 py-1 rounded-md text-xs cursor-pointer shrink-0 transition-colors",
+                  isActive
+                    ? "bg-background text-foreground shadow-sm border"
+                    : "text-muted-foreground hover:text-foreground hover:bg-muted/50"
+                )}
+              >
+                <button
+                  onClick={() => onDocumentSelect(doc.identifier)}
+                  className="flex items-center gap-1.5"
+                >
+                  <Icon className="h-3 w-3 shrink-0" />
+                  <span className="truncate max-w-[120px]">{doc.title}</span>
+                </button>
+                {onDocumentClose && (
+                  <button
+                    onClick={(e) => {
+                      e.stopPropagation()
+                      setRemoveTarget(doc)
+                      setShowRemoveDialog(true)
+                    }}
+                    className="p-0.5 rounded opacity-0 group-hover:opacity-100 hover:bg-destructive/10 hover:text-destructive transition-all"
+                    aria-label={`Remove ${doc.title}`}
+                  >
+                    <X className="h-3 w-3" />
+                  </button>
+                )}
+              </div>
+            )
+          })}
+        </div>
+      )}
+
       {/* Content */}
       <div className="flex-1 overflow-y-auto">
         <div className="max-w-none p-6">
@@ -391,6 +436,19 @@ export function DiscoveryCanvas({
               </>
             )}
           </button>
+          {onDocumentClose && (
+            <button
+              onClick={() => {
+                setRemoveTarget(activeDoc)
+                setShowRemoveDialog(true)
+              }}
+              className="flex items-center gap-1.5 px-3 py-1.5 text-sm text-muted-foreground hover:text-destructive hover:bg-destructive/10 rounded-md transition-colors"
+              aria-label={`Remove ${activeDoc.title}`}
+            >
+              <Trash2 className="h-4 w-4" />
+              Remove
+            </button>
+          )}
         </div>
 
         {currentVersion?.status === "awaiting_approval" && isLatestVersion && (
@@ -406,12 +464,27 @@ export function DiscoveryCanvas({
             <ApprovalModal
               open={showApprovalModal}
               onOpenChange={setShowApprovalModal}
-              title="Approve & Create Project"
-              description="This will create a project and redirect you to the project workspace. This action cannot be undone."
+              title="Approve & Create Workspace"
+              description="This will create a workspace and redirect you to it. This action cannot be undone."
               onConfirm={handleApprove}
               confirmText="Approve & Continue"
             />
           </>
+        )}
+
+        {onDocumentClose && removeTarget && (
+          <ConfirmDialog
+            open={showRemoveDialog}
+            onOpenChange={(open) => {
+              setShowRemoveDialog(open)
+              if (!open) setRemoveTarget(null)
+            }}
+            title="Remove Document"
+            description={`This will remove "${removeTarget.title}" and all its versions from this session.`}
+            confirmLabel="Remove"
+            variant="destructive"
+            onConfirm={() => onDocumentClose(removeTarget.identifier)}
+          />
         )}
 
         {currentVersion?.status === "approved" && isLatestVersion && (

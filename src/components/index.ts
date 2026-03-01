@@ -1,6 +1,6 @@
 // Barrel exports for components
 export { ActivityFeed } from "./activity-feed"
-export { ActivityItem } from "./activity-item"
+export type { Activity, ActivityFeedProps } from "./activity-feed"
 export { AgentAvatar } from "./agent-avatar"
 export { AgentCard } from "./agent-card"
 export { AppShell } from "./app-shell"
@@ -9,7 +9,7 @@ export { BackButton } from "./back-button"
 export { BrandButton } from "./brand-button"
 export { CanvasSectionNav } from "./canvas-section-nav"
 export { CanvasStatusBadge } from "./canvas-status-badge"
-export { ChatInput, type ChatInputHandle } from "./chat-input"
+export { ChatInput, type ChatInputHandle, type ChatAttachment, type ActiveToggles } from "./chat-input"
 export { ChatMessage } from "./chat-message"
 export { ChatSearch, type SearchItem } from "./chat-search"
 export { ConfirmDialog } from "./confirm-dialog"
@@ -45,8 +45,39 @@ export { Sidebar, SidebarItem, SidebarSection } from "./sidebar"
 // Workflow components
 export { WorkflowPicker } from "./workflow-picker"
 
-// Mission workspace components
-export { MissionIntake } from "./mission-intake"
+// Project workspace components
 export { DocumentPicker } from "./document-picker"
-export { MissionWorkspace } from "./mission-workspace"
+export { ProjectWorkspace } from "./project-workspace"
+export { OrchestrationWorkspace } from "./orchestration-workspace"
 export { ValidationPanel } from "./validation-panel"
+export { TaskKanban } from "./task-kanban"
+export { AgentPanel, ActivityLog } from "./agent-panel"
+
+// Project creation components
+export { ProjectTypeSelector, type ProjectType } from "./project-type-selector"
+export { ProjectIntake } from "./project-intake"
+export { TemplateSelector } from "./template-selector"
+
+// UI components (reusable)
+export { SelectionCard, type SelectionCardProps } from "./ui/selection-card"
+export { OnboardingHeader, type OnboardingHeaderProps } from "./ui/onboarding-header"
+export { BottomBar, BottomBarButton } from "./ui/bottom-bar"
+
+// File upload
+export { FileUploadZone } from "./file-upload-zone"
+
+// Project cards
+export { ProjectCard, type ProjectCardProps, DraftCard } from "./project-card"
+
+// Context & Memory
+export { ContextViewer } from "./context-viewer"
+export { ContextIndicator } from "./context-indicator"
+
+// Chat components
+export { JarvisChat } from "./jarvis-chat"
+export { ChatHeader } from "./chat-header"
+export { CanvasPanel, type CanvasPanelProps } from "./canvas-panel"
+
+// Auth & Layout
+export { AuthenticatedLayout } from "./authenticated-layout"
+export { ApprovalModal } from "./approval-modal"

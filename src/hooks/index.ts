@@ -1,2 +1,8 @@
 export { useApproval } from "./use-approval"
 export { useActiveSessions, useIsSessionConverted } from "./use-active-sessions"
+export { useChatActions } from "./use-chat-actions"
+export type { UseChatActionsOptions, UseChatActionsReturn } from "./use-chat-actions"
+export { useCanvasPanel } from "./use-canvas-panel"
+export type { UseCanvasPanelOptions, UseCanvasPanelReturn } from "./use-canvas-panel"
+export { useChatStream } from "./use-chat-stream"
+export type { UseChatStreamOptions, UseChatStreamReturn } from "./use-chat-stream"

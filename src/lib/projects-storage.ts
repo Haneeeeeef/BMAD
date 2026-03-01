@@ -1,6 +1,7 @@
 "use client"
 
 import type { Status } from "@/components/status-badge"
+import { safeGetItem, safeSetItem } from "./safe-storage"
 
 export interface Project {
   id: string
@@ -16,13 +17,13 @@ export interface Project {
   chatSessionId?: string // Link back to the originating chat
 }
 
-const STORAGE_KEY = "mission-control-projects"
+const STORAGE_KEY = "projects"
 
 // Load all projects from localStorage
 export function loadProjects(): Project[] {
   if (typeof window === "undefined") return []
   try {
-    const data = localStorage.getItem(STORAGE_KEY)
+    const data = safeGetItem(STORAGE_KEY)
     return data ? JSON.parse(data) : []
   } catch {
     console.error("[projects-storage] Failed to load projects")
@@ -34,7 +35,7 @@ export function loadProjects(): Project[] {
 function saveProjects(projects: Project[]): void {
   if (typeof window === "undefined") return
   try {
-    localStorage.setItem(STORAGE_KEY, JSON.stringify(projects))
+    safeSetItem(STORAGE_KEY, JSON.stringify(projects))
   } catch (err) {
     console.error("[projects-storage] Failed to save projects:", err)
   }
@@ -90,4 +91,18 @@ export function deleteProject(id: string): boolean {
 export function findProjectByChatSession(chatSessionId: string): Project | null {
   const projects = loadProjects()
   return projects.find(p => p.chatSessionId === chatSessionId) || null
+}
+
+// Append a project with any shape (for BMAD projects that have a different type)
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+export function appendProject(project: Record<string, any>): void {
+  if (typeof window === "undefined") return
+  try {
+    const data = safeGetItem(STORAGE_KEY)
+    const existing = data ? JSON.parse(data) : []
+    existing.push(project)
+    safeSetItem(STORAGE_KEY, JSON.stringify(existing))
+  } catch {
+    // Silent fail
+  }
 }

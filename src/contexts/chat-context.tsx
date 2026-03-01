@@ -1,6 +1,6 @@
 "use client"
 
-import { createContext, useContext, ReactNode } from "react"
+import { createContext, useContext, useMemo, ReactNode } from "react"
 import { useChatSessions } from "@/hooks/use-chat-sessions"
 import { ChatSession, Message } from "@/lib/types"
 
@@ -19,10 +19,17 @@ const ChatContext = createContext<ChatContextValue | null>(null)
 
 export function ChatProvider({ children }: { children: ReactNode }) {
   const chatSessions = useChatSessions()
-
-  return (
-    <ChatContext.Provider value={chatSessions}>{children}</ChatContext.Provider>
-  )
+  const value = useMemo(() => chatSessions, [
+    chatSessions.sessions,
+    chatSessions.isLoaded,
+    chatSessions.createSession,
+    chatSessions.updateSession,
+    chatSessions.deleteSession,
+    chatSessions.getSession,
+    chatSessions.addMessage,
+    chatSessions.updateMessage,
+  ])
+  return <ChatContext.Provider value={value}>{children}</ChatContext.Provider>
 }
 
 export function useChatContext() {

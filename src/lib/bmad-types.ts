@@ -33,7 +33,7 @@ export type BmadWorkflow = {
   impactArea: string // e.g., "Strategy", "Technical", "Process"
 }
 
-export type Mission = {
+export type BmadProject = {
   id: string
   name: string
   mode: "new-build" | "enhancement" | "migration" | "clarification"
@@ -53,10 +53,14 @@ export type Mission = {
   }
 
   artifacts: Artifact[]
-  deliverables: Deliverable[] // New: ordered list of deliverables to create
-  inputDocuments: string[] // New: uploaded/referenced documents
+  deliverables: Deliverable[] // Ordered list of deliverables to create
+  inputDocuments: string[] // Uploaded/referenced documents
   sessionId: string
 }
+
+// Backwards compatibility aliases
+export type Project = BmadProject
+export type Mission = BmadProject
 
 export type Artifact = {
   id: string
@@ -68,7 +72,41 @@ export type Artifact = {
 }
 
 // Deliverable types for the new workspace UI
-export type DeliverableType = "product-brief" | "prd" | "ux-sitemap" | "architecture" | "user-stories" | "sprint-plan"
+export type DeliverableType =
+  // Analysis
+  | "product-brief"
+  | "domain-research"
+  | "market-research"
+  | "technical-research"
+  // Planning
+  | "prd"
+  | "prototype"
+  | "edit-prd"
+  | "validate-prd"
+  | "ux-design"
+  // Solutioning
+  | "architecture"
+  | "epics-stories"
+  | "implementation-readiness"
+  // Implementation
+  | "sprint-planning"
+  | "create-story"
+  | "dev-story"
+  | "code-review"
+  | "correct-course"
+  | "retrospective"
+  | "sprint-status"
+  // Quick Flow
+  | "quick-spec"
+  | "quick-dev"
+  // Utility
+  | "generate-context"
+  | "document-project"
+  | "qa-tests"
+  // Core
+  | "brainstorming"
+  | "party-mode"
+  | "advanced-elicitation"
 
 export type DeliverableTask = {
   id: string
@@ -101,7 +139,9 @@ export type ValidationResult = {
   suggestion?: string
 }
 
-// Available deliverables for document picker
+// Available deliverables for document picker - All 27 workflows
+export type DeliverablePhase = "analysis" | "planning" | "solutioning" | "implementation" | "quick-flow" | "utility" | "core"
+
 export const AVAILABLE_DELIVERABLES: Array<{
   type: DeliverableType
   workflowId: string
@@ -109,7 +149,10 @@ export const AVAILABLE_DELIVERABLES: Array<{
   description: string
   estimatedTime: string
   outputType: string
+  phase: DeliverablePhase
+  icon: string
 }> = [
+  // === ANALYSIS (4) ===
   {
     type: "product-brief",
     workflowId: "create-product-brief",
@@ -117,48 +160,298 @@ export const AVAILABLE_DELIVERABLES: Array<{
     description: "Vision, users, market, value proposition",
     estimatedTime: "15 min",
     outputType: "Strategy document",
+    phase: "analysis",
+    icon: "📋",
   },
+  {
+    type: "domain-research",
+    workflowId: "domain-research",
+    name: "Domain Research",
+    description: "Industry context, terminology, regulations",
+    estimatedTime: "20 min",
+    outputType: "Research report",
+    phase: "analysis",
+    icon: "🔍",
+  },
+  {
+    type: "market-research",
+    workflowId: "market-research",
+    name: "Market Research",
+    description: "Competitors, market size, positioning",
+    estimatedTime: "25 min",
+    outputType: "Market analysis",
+    phase: "analysis",
+    icon: "📊",
+  },
+  {
+    type: "technical-research",
+    workflowId: "technical-research",
+    name: "Technical Research",
+    description: "Tech stack evaluation, feasibility assessment",
+    estimatedTime: "20 min",
+    outputType: "Tech assessment",
+    phase: "analysis",
+    icon: "🔬",
+  },
+
+  // === PLANNING (5) ===
   {
     type: "prd",
     workflowId: "create-prd",
     name: "PRD",
     description: "Features, user stories, acceptance criteria",
-    estimatedTime: "25 min",
+    estimatedTime: "30 min",
     outputType: "Requirements doc",
+    phase: "planning",
+    icon: "📝",
   },
   {
-    type: "ux-sitemap",
-    workflowId: "create-ux-sitemap",
-    name: "UX Sitemap",
-    description: "Information architecture, user flows",
-    estimatedTime: "12 min",
-    outputType: "UX document",
+    type: "prototype",
+    workflowId: "create-prototype",
+    name: "Prototype",
+    description: "Visual screens from requirements using Pencil",
+    estimatedTime: "20 min",
+    outputType: "Pencil designs",
+    phase: "planning",
+    icon: "🎨",
   },
+  {
+    type: "edit-prd",
+    workflowId: "edit-prd",
+    name: "Edit PRD",
+    description: "Modify and refine existing PRD",
+    estimatedTime: "15 min",
+    outputType: "Updated PRD",
+    phase: "planning",
+    icon: "✏️",
+  },
+  {
+    type: "validate-prd",
+    workflowId: "validate-prd",
+    name: "Validate PRD",
+    description: "Review PRD for completeness and feasibility",
+    estimatedTime: "10 min",
+    outputType: "Validation report",
+    phase: "planning",
+    icon: "✅",
+  },
+  {
+    type: "ux-design",
+    workflowId: "create-ux-design",
+    name: "UX Design",
+    description: "User flows, wireframes, design system",
+    estimatedTime: "25 min",
+    outputType: "UX specification",
+    phase: "planning",
+    icon: "🖼️",
+  },
+
+  // === SOLUTIONING (3) ===
   {
     type: "architecture",
     workflowId: "create-architecture",
-    name: "Technical Architecture",
-    description: "System design, APIs, data model",
+    name: "Architecture",
+    description: "System design, APIs, data model, ADRs",
+    estimatedTime: "25 min",
+    outputType: "Architecture doc",
+    phase: "solutioning",
+    icon: "🏗️",
+  },
+  {
+    type: "epics-stories",
+    workflowId: "create-epics-stories",
+    name: "Epics & Stories",
+    description: "Break requirements into implementable work",
     estimatedTime: "20 min",
-    outputType: "Tech spec",
-  },
-  {
-    type: "user-stories",
-    workflowId: "create-user-stories",
-    name: "User Stories",
-    description: "Epics, stories, acceptance criteria",
-    estimatedTime: "18 min",
     outputType: "Backlog items",
+    phase: "solutioning",
+    icon: "📚",
   },
   {
-    type: "sprint-plan",
-    workflowId: "create-sprint-plan",
-    name: "Sprint Plan",
-    description: "Sprint goals, task breakdown, assignments",
+    type: "implementation-readiness",
+    workflowId: "check-implementation-readiness",
+    name: "Implementation Readiness",
+    description: "Gate check before development begins",
     estimatedTime: "10 min",
-    outputType: "Sprint backlog",
+    outputType: "PASS/FAIL decision",
+    phase: "solutioning",
+    icon: "🚦",
+  },
+
+  // === IMPLEMENTATION (7) ===
+  {
+    type: "sprint-planning",
+    workflowId: "sprint-planning",
+    name: "Sprint Planning",
+    description: "Initialize tracking and sequence dev cycle",
+    estimatedTime: "15 min",
+    outputType: "Sprint status",
+    phase: "implementation",
+    icon: "🎯",
+  },
+  {
+    type: "create-story",
+    workflowId: "create-story",
+    name: "Create Story",
+    description: "Prepare next story for implementation",
+    estimatedTime: "10 min",
+    outputType: "Story file",
+    phase: "implementation",
+    icon: "📄",
+  },
+  {
+    type: "dev-story",
+    workflowId: "dev-story",
+    name: "Dev Story",
+    description: "Implement the story with code and tests",
+    estimatedTime: "Variable",
+    outputType: "Working code",
+    phase: "implementation",
+    icon: "💻",
+  },
+  {
+    type: "code-review",
+    workflowId: "code-review",
+    name: "Code Review",
+    description: "Validate implementation quality",
+    estimatedTime: "15 min",
+    outputType: "Review feedback",
+    phase: "implementation",
+    icon: "🔎",
+  },
+  {
+    type: "correct-course",
+    workflowId: "correct-course",
+    name: "Correct Course",
+    description: "Handle significant mid-sprint changes",
+    estimatedTime: "10 min",
+    outputType: "Updated plan",
+    phase: "implementation",
+    icon: "🔄",
+  },
+  {
+    type: "retrospective",
+    workflowId: "retrospective",
+    name: "Retrospective",
+    description: "Review after epic completion",
+    estimatedTime: "15 min",
+    outputType: "Lessons learned",
+    phase: "implementation",
+    icon: "🪞",
+  },
+  {
+    type: "sprint-status",
+    workflowId: "sprint-status",
+    name: "Sprint Status",
+    description: "Track progress and blockers",
+    estimatedTime: "5 min",
+    outputType: "Status update",
+    phase: "implementation",
+    icon: "📈",
+  },
+
+  // === QUICK FLOW (2) ===
+  {
+    type: "quick-spec",
+    workflowId: "quick-spec",
+    name: "Quick Spec",
+    description: "Define an ad-hoc change rapidly",
+    estimatedTime: "10 min",
+    outputType: "Tech spec",
+    phase: "quick-flow",
+    icon: "⚡",
+  },
+  {
+    type: "quick-dev",
+    workflowId: "quick-dev",
+    name: "Quick Dev",
+    description: "Implement from spec or direct instructions",
+    estimatedTime: "Variable",
+    outputType: "Working code",
+    phase: "quick-flow",
+    icon: "🚀",
+  },
+
+  // === UTILITY (3) ===
+  {
+    type: "generate-context",
+    workflowId: "generate-project-context",
+    name: "Generate Context",
+    description: "Create project-context.md from codebase",
+    estimatedTime: "10 min",
+    outputType: "Context file",
+    phase: "utility",
+    icon: "🧠",
+  },
+  {
+    type: "document-project",
+    workflowId: "document-project",
+    name: "Document Project",
+    description: "Generate documentation from code",
+    estimatedTime: "15 min",
+    outputType: "Documentation",
+    phase: "utility",
+    icon: "📖",
+  },
+  {
+    type: "qa-tests",
+    workflowId: "qa-generate-tests",
+    name: "Generate Tests",
+    description: "Create E2E tests for existing features",
+    estimatedTime: "20 min",
+    outputType: "Test suite",
+    phase: "utility",
+    icon: "🧪",
+  },
+
+  // === CORE (3) ===
+  {
+    type: "brainstorming",
+    workflowId: "brainstorming",
+    name: "Brainstorming",
+    description: "Guided idea generation with AI coach",
+    estimatedTime: "20 min",
+    outputType: "Ideas report",
+    phase: "core",
+    icon: "💡",
+  },
+  {
+    type: "party-mode",
+    workflowId: "party-mode",
+    name: "Party Mode",
+    description: "Multi-agent collaborative discussion",
+    estimatedTime: "Variable",
+    outputType: "Discussion log",
+    phase: "core",
+    icon: "🎉",
+  },
+  {
+    type: "advanced-elicitation",
+    workflowId: "advanced-elicitation",
+    name: "Advanced Elicitation",
+    description: "Deep requirements extraction techniques",
+    estimatedTime: "30 min",
+    outputType: "Requirements",
+    phase: "core",
+    icon: "🎯",
   },
 ]
+
+// Helper to get deliverables by phase
+export function getDeliverablesByPhase(phase: DeliverablePhase) {
+  return AVAILABLE_DELIVERABLES.filter((d) => d.phase === phase)
+}
+
+// Phase metadata for UI
+export const PHASE_META: Record<DeliverablePhase, { name: string; icon: string; color: string }> = {
+  analysis: { name: "Analysis", icon: "🔬", color: "#8B5CF6" },
+  planning: { name: "Planning", icon: "📐", color: "#3B82F6" },
+  solutioning: { name: "Solutioning", icon: "🏗️", color: "#F59E0B" },
+  implementation: { name: "Implementation", icon: "💻", color: "#10B981" },
+  "quick-flow": { name: "Quick Flow", icon: "⚡", color: "#EC4899" },
+  utility: { name: "Utility", icon: "🔧", color: "#6B7280" },
+  core: { name: "Core", icon: "🧠", color: "#6366F1" },
+}
 
 // Agent definitions with personality
 export const BMAD_AGENTS = {
@@ -331,6 +624,31 @@ export const BMAD_PHASES: BmadPhase[] = [
         aiDepth: "High",
         outputFormat: "PRD Document MD",
         impactArea: "Product",
+      },
+      {
+        id: "create-prototype",
+        phaseId: "2-planning",
+        name: "Create Prototype",
+        description: "Generate visual prototypes from requirements using Pencil",
+        trigger: "PT",
+        agent: "ux-designer",
+        agentName: "Sally",
+        agentEmoji: "🎨",
+        stepCount: 5,
+        areas: [
+          "Analyze requirements",
+          "Define screen inventory",
+          "Generate wireframes",
+          "Apply design system",
+          "Export & iterate",
+        ],
+        workflowPath: `${WORKFLOW_BASE}/2-plan-workflows/create-prototype/workflow.md`,
+        outputArtifact: "prototype",
+        isQuickAction: true,
+        estimatedTime: "15–30 min",
+        aiDepth: "High",
+        outputFormat: "Pencil .pen files",
+        impactArea: "Design",
       },
       {
         id: "edit-prd",
@@ -840,21 +1158,21 @@ export function getQuickActions(): BmadWorkflow[] {
   return quickActions
 }
 
-export function getSuggestedWorkflows(mission: Mission): BmadWorkflow[] {
+export function getSuggestedWorkflows(project: BmadProject): BmadWorkflow[] {
   const suggestions: BmadWorkflow[] = []
 
   // No artifacts - suggest starting with brief
-  if (mission.artifacts.length === 0) {
+  if (project.artifacts.length === 0) {
     const brief = getWorkflowById("create-product-brief")
     if (brief) suggestions.push(brief)
     return suggestions
   }
 
-  const hasBrief = mission.artifacts.some(a => a.type === "brief" && a.status === "complete")
-  const hasPrd = mission.artifacts.some(a => a.type === "prd" && a.status === "complete")
-  const hasUx = mission.artifacts.some(a => a.type === "ux" && a.status === "complete")
-  const hasArchitecture = mission.artifacts.some(a => a.type === "architecture" && a.status === "complete")
-  const hasStories = mission.artifacts.some(a => a.type === "stories" && a.status === "complete")
+  const hasBrief = project.artifacts.some(a => a.type === "brief" && a.status === "complete")
+  const hasPrd = project.artifacts.some(a => a.type === "prd" && a.status === "complete")
+  const hasUx = project.artifacts.some(a => a.type === "ux" && a.status === "complete")
+  const hasArchitecture = project.artifacts.some(a => a.type === "architecture" && a.status === "complete")
+  const hasStories = project.artifacts.some(a => a.type === "stories" && a.status === "complete")
 
   // Suggest based on what's complete
   if (hasBrief && !hasPrd) {
@@ -902,92 +1220,54 @@ export function searchWorkflows(query: string): BmadWorkflow[] {
 }
 
 // Build the command to start a workflow
-export function buildWorkflowStartCommand(workflow: BmadWorkflow, mission: Mission): string {
-  // Generate a safe project folder name from mission name
-  const projectSlug = mission.name
+/**
+ * Build the system message for workflow kickoff (hidden from user).
+ * Contains project context, paths, and behavioral instructions.
+ */
+export function buildWorkflowSystemMessage(workflow: BmadWorkflow, project: BmadProject): string {
+  const projectSlug = project.name
     .toLowerCase()
     .replace(/[^a-z0-9]+/g, '-')
     .replace(/^-|-$/g, '')
     .slice(0, 32)
 
-  const projectRoot = `/home/haneef/workspaces/jarvis/projects/${projectSlug}`
-  const contextFile = `${projectRoot}/PROJECT-CONTEXT.md`
-  const transcriptFile = `${projectRoot}/WORKFLOW-TRANSCRIPT-${workflow.id}.md`
+  const vpsBase = process.env.VPS_PROJECTS_BASE || "/home/haneef/workspaces/jarvis/projects"
+  const projectRoot = `${vpsBase}/${projectSlug}`
 
-  const lines = [
-    `/${workflow.agent}`,
-    `/think:medium`,  // Enable OpenClaw reasoning mode
+  const parts = [
+    `[Mission Control] Workflow: ${workflow.id}`,
+    `Project: ${project.name}`,
+    `Description: ${project.description}`,
+    `Project workspace: ${projectRoot}`,
     ``,
-    `## PROJECT: ${mission.name}`,
+    `Run the "${workflow.id}" workflow for project "${projectSlug}".`,
     ``,
-    `[PROJECT CONTEXT]`,
-    `project_name: ${mission.name}`,
-    `project_root: ${projectRoot}`,
-    `planning_artifacts: ${projectRoot}/planning-artifacts`,
-    `implementation_artifacts: ${projectRoot}/implementation-artifacts`,
-    `context_file: ${contextFile}`,
-    `transcript_file: ${transcriptFile}`,
-    ``,
-    `Type: ${mission.mode}`,
-    `Description: ${mission.description}`,
+    `## Communication style`,
+    `- Start with a warm, friendly greeting. Briefly let the user know you're checking the project workspace and getting set up — something like "Hey! Let me take a quick look at what we have so far..." so the user isn't left waiting in silence.`,
+    `- Then perform your initialization (load context, check for existing docs, set up files) without narrating each step. Just do it.`,
+    `- After init, jump straight into the first meaningful question or topic from the workflow.`,
+    `- Do NOT announce your role, mode, or internal architecture (no "I'm Mary, analyst mode", no "spawning subagent", no "sessions_send").`,
+    `- Be conversational and direct — like a skilled colleague starting a working session.`,
   ]
 
-  if (mission.context.industry) {
-    lines.push(`Industry: ${mission.context.industry}`)
-  }
-  if (mission.context.techStack) {
-    lines.push(`Tech Stack: ${mission.context.techStack}`)
+  if (project.context.industry) parts.push(`Industry: ${project.context.industry}`)
+  if (project.context.techStack) parts.push(`Tech Stack: ${project.context.techStack}`)
+
+  if (project.inputDocuments?.length) {
+    parts.push(`Input documents: ${project.inputDocuments.length} files uploaded to ${projectRoot}/uploads/`)
   }
 
-  lines.push(`[/PROJECT CONTEXT]`)
-  lines.push(``)
-  lines.push(`## INSTRUCTIONS`)
-  lines.push(``)
-  lines.push(`**STEP 1 - CHECK CONTEXT**: Check if PROJECT-CONTEXT.md exists at ${contextFile}`)
-  lines.push(`- If it EXISTS: Read it first to understand previous session state, decisions made, and where to resume`)
-  lines.push(`- If it does NOT exist: This is a fresh project, proceed with setup`)
-  lines.push(``)
-  lines.push(`**STEP 2 - SETUP TRANSCRIPT**: Check if workflow transcript exists at ${transcriptFile}`)
-  lines.push(`- If it EXISTS: Read it to see what user responses were already captured, then continue from where left off`)
-  lines.push(`- If it does NOT exist: Create it with this header:`)
-  lines.push(`\`\`\`markdown`)
-  lines.push(`# Workflow Transcript: ${workflow.name}`)
-  lines.push(``)
-  lines.push(`| Field | Value |`)
-  lines.push(`|-------|-------|`)
-  lines.push(`| **Workflow** | ${workflow.name} |`)
-  lines.push(`| **Started** | [current timestamp] |`)
-  lines.push(`| **Status** | In Progress |`)
-  lines.push(``)
-  lines.push(`---`)
-  lines.push(``)
-  lines.push(`## Captured Responses`)
-  lines.push(`\`\`\``)
-  lines.push(``)
-  lines.push(`**STEP 3 - WORKFLOW EXECUTION**: Run the workflow with transcript logging`)
-  lines.push(`1. Create project folder if needed: mkdir -p ${projectRoot}/planning-artifacts`)
-  lines.push(`2. Read the workflow file: ${workflow.workflowPath}`)
-  lines.push(`3. For EACH area/section of the workflow:`)
-  lines.push(`   a) Ask the user the relevant questions`)
-  lines.push(`   b) After user responds, IMMEDIATELY append to ${transcriptFile}:`)
-  lines.push(`      \`\`\`markdown`)
-  lines.push(`      ### Area: [Area Name]`)
-  lines.push(`      **Question**: [What you asked]`)
-  lines.push(`      **User Response**: [Their full response - capture everything]`)
-  lines.push(`      **Captured At**: [timestamp]`)
-  lines.push(`      \`\`\``)
-  lines.push(`   c) Then proceed to next area`)
-  lines.push(``)
-  lines.push(`**STEP 4 - CREATE DOCUMENT**: When all areas complete:`)
-  lines.push(`1. Read the FULL transcript from ${transcriptFile}`)
-  lines.push(`2. Use ALL captured responses to create the final document`)
-  lines.push(`3. Save document to: ${projectRoot}/planning-artifacts/`)
-  lines.push(`4. Update transcript status to "Complete"`)
-  lines.push(``)
-  lines.push(`**CRITICAL**: The transcript is your source of truth. If context is compacted mid-workflow,`)
-  lines.push(`read the transcript to see exactly what the user said - nothing is lost.`)
-  lines.push(``)
-  lines.push(`BEGIN NOW - check context, setup transcript, then introduce yourself and start "${workflow.name}".`)
+  return parts.join('\n')
+}
 
-  return lines.join('\n')
+/**
+ * Build the clean user message for workflow kickoff (visible to user).
+ */
+export function buildWorkflowUserMessage(workflow: BmadWorkflow): string {
+  return `Let's start the ${workflow.name.toLowerCase()}.`
+}
+
+/** @deprecated Use buildWorkflowSystemMessage + buildWorkflowUserMessage instead */
+export function buildWorkflowStartCommand(workflow: BmadWorkflow, project: BmadProject): string {
+  return buildWorkflowUserMessage(workflow)
 }

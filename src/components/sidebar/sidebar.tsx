@@ -8,6 +8,7 @@ import { SidebarItem } from "./sidebar-item"
 import { SidebarSection } from "./sidebar-section"
 import { ChatSearch, type SearchItem } from "@/components"
 import { PenSquare, Search, FolderKanban, Settings, PanelLeftClose, PanelLeft } from "lucide-react"
+import { authHeaders } from "@/lib/safe-storage"
 import { mockProjects } from "@/lib/mock-data"
 import { useChatContext } from "@/contexts/chat-context"
 import { useActiveSessions } from "@/hooks/use-active-sessions"
@@ -23,7 +24,7 @@ interface SidebarProps {
 export function Sidebar({ isOpen = true, onToggle, className }: SidebarProps) {
   const [searchOpen, setSearchOpen] = useState(false)
   const { deleteSession } = useChatContext()
-  const activeSessions = useActiveSessions() // Excludes sessions converted to projects
+  const activeSessions = useActiveSessions() // Excludes sessions converted to workspaces
 
   // Handle delete with VPS cleanup
   const handleDeleteSession = useCallback(async (sessionId: string) => {
@@ -31,7 +32,7 @@ export function Sidebar({ isOpen = true, onToggle, className }: SidebarProps) {
       // Delete from VPS
       await fetch('/api/session/delete', {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers: authHeaders({ 'Content-Type': 'application/json' }),
         body: JSON.stringify({ sessionId })
       })
 
@@ -104,7 +105,7 @@ export function Sidebar({ isOpen = true, onToggle, className }: SidebarProps) {
                   <PenSquare className="h-5 w-5" strokeWidth={1.75} />
                 </Link>
               </TooltipTrigger>
-              <TooltipContent side="right">New project</TooltipContent>
+              <TooltipContent side="right">New workspace</TooltipContent>
             </Tooltip>
 
             <Tooltip>
@@ -129,7 +130,7 @@ export function Sidebar({ isOpen = true, onToggle, className }: SidebarProps) {
                   <FolderKanban className="h-5 w-5" strokeWidth={1.75} />
                 </Link>
               </TooltipTrigger>
-              <TooltipContent side="right">Projects</TooltipContent>
+              <TooltipContent side="right">Workspaces</TooltipContent>
             </Tooltip>
           </div>
 
@@ -159,7 +160,7 @@ export function Sidebar({ isOpen = true, onToggle, className }: SidebarProps) {
           items={searchItems}
           open={searchOpen}
           onOpenChange={setSearchOpen}
-          placeholder="Search projects..."
+          placeholder="Search workspaces..."
         />
       </>
     )
@@ -196,20 +197,20 @@ export function Sidebar({ isOpen = true, onToggle, className }: SidebarProps) {
         {/* Navigation */}
         <div className="px-2 pt-4 space-y-0.5">
           <SidebarItem href="/new" icon={PenSquare}>
-            New project
+            New workspace
           </SidebarItem>
           <SidebarItem as="button" icon={Search} onClick={handleOpenSearch}>
-            Search projects
+            Search workspaces
           </SidebarItem>
           <SidebarItem href="/projects" icon={FolderKanban}>
-            Projects
+            Workspaces
           </SidebarItem>
         </div>
 
         {/* In Progress Projects */}
         <div className="flex-1 overflow-y-auto px-2 pb-3">
           {activeSessions.length > 0 && (
-            <SidebarSection title="In Progress Projects">
+            <SidebarSection title="In Progress">
               {activeSessions.map((session) => (
                 <SidebarItem
                   key={session.id}
@@ -245,7 +246,7 @@ export function Sidebar({ isOpen = true, onToggle, className }: SidebarProps) {
         items={searchItems}
         open={searchOpen}
         onOpenChange={setSearchOpen}
-        placeholder="Search projects..."
+        placeholder="Search workspaces..."
       />
     </>
   )

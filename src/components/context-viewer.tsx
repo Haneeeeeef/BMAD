@@ -4,6 +4,7 @@ import React, { useState, useEffect, useCallback } from "react"
 import { X, FileText, Brain, RefreshCw, Loader2, ScrollText, ChevronLeft } from "lucide-react"
 import ReactMarkdown from "react-markdown"
 import remarkGfm from "remark-gfm"
+import { authHeaders } from "@/lib/safe-storage"
 
 interface ContextViewerProps {
   projectName: string
@@ -40,7 +41,7 @@ export function ContextViewer({ projectName, isOpen, onClose }: ContextViewerPro
         url += `&workflow=${encodeURIComponent(workflowId)}`
       }
 
-      const response = await fetch(url)
+      const response = await fetch(url, { headers: authHeaders() })
       const data = await response.json()
 
       if (type === "workflow-transcript" && !workflowId) {

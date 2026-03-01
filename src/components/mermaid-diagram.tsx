@@ -1,17 +1,30 @@
 "use client"
 
 import * as React from "react"
-import mermaid from "mermaid"
 import { TransformWrapper, TransformComponent } from "react-zoom-pan-pinch"
 import { ZoomIn, ZoomOut, RotateCcw } from "lucide-react"
 
-// Initialize mermaid with config
-mermaid.initialize({
-  startOnLoad: false,
-  theme: "neutral",
-  securityLevel: "loose",
-  fontFamily: "inherit",
-})
+type MermaidAPI = typeof import("mermaid").default
+
+let mermaidInstance: MermaidAPI | null = null
+let mermaidInitialized = false
+
+async function getMermaid(): Promise<MermaidAPI> {
+  if (!mermaidInstance) {
+    const mod = await import("mermaid")
+    mermaidInstance = mod.default
+  }
+  if (!mermaidInitialized) {
+    mermaidInstance.initialize({
+      startOnLoad: false,
+      theme: "neutral",
+      securityLevel: "loose",
+      fontFamily: "inherit",
+    })
+    mermaidInitialized = true
+  }
+  return mermaidInstance
+}
 
 interface MermaidDiagramProps {
   chart: string
@@ -37,6 +50,7 @@ export const MermaidDiagram = React.memo(function MermaidDiagram({ chart, classN
       try {
         // Generate unique ID for this diagram
         const id = `mermaid-${Math.random().toString(36).substr(2, 9)}`
+        const mermaid = await getMermaid()
         const { svg } = await mermaid.render(id, trimmedChart)
         setSvg(svg)
         setError(null)

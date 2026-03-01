@@ -155,6 +155,46 @@ Store transient context:
 
 ---
 
+## Knowledge Base & Uploads
+
+### Architecture
+User uploads (PDF, Word, images, etc.) are extracted to markdown and stored in the OpenClaw memory folder for automatic indexing and hybrid search.
+
+```
+/PROJECTS/{project-name}/
+  ├── memory/               # OpenClaw auto-indexes this
+  │   ├── sources/          # Extracted uploads → markdown
+  │   ├── context.md        # Core context (always loaded)
+  │   └── sources-index.md  # Summary of all uploads
+```
+
+### Flow
+1. **Upload** → Files extracted client-side via `/api/extract`
+2. **Create Project** → Calls `/api/context/generate` via SSH to VPS
+3. **Generate** → Creates `context.md`, `sources-index.md`, and `sources/*.md`
+4. **Index** → OpenClaw auto-chunks (400 tokens) and embeds markdown files
+5. **Search** → Jarvis uses hybrid search (70% semantic + 30% BM25)
+
+### Supported Formats
+- PDF → pdfjs-dist text extraction
+- Word → mammoth text extraction
+- Excel → placeholder (pending)
+- Images → placeholder (pending vision integration)
+- Markdown/Text → direct copy
+
+### Context Files
+- **`context.md`** - Project description + source file list (always loaded)
+- **`sources-index.md`** - Table of files with metadata + content previews
+- **`sources/*.md`** - Individual extracted documents as markdown
+
+### Context Injection
+When creating documents, Jarvis:
+1. Loads `context.md` (always in context)
+2. Queries `memory_search` for relevant chunks from uploads
+3. Injects retrieved context into document generation
+
+---
+
 ## API Integration
 
 ### Endpoint

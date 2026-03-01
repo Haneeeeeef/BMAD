@@ -1,7 +1,7 @@
 import Link from "next/link"
 import { ArrowRight } from "lucide-react"
 
-export type MissionCardProps = {
+export type ProjectCardProps = {
   id: string
   name: string
   mode: string
@@ -14,7 +14,7 @@ export type MissionCardProps = {
   href?: string
 }
 
-export function MissionCard({
+export function ProjectCard({
   id,
   name,
   mode,
@@ -25,8 +25,8 @@ export function MissionCard({
   tags = [],
   updatedAt,
   href,
-}: MissionCardProps) {
-  const linkHref = href || `/missions/${id}`
+}: ProjectCardProps) {
+  const linkHref = href || `/projects/${id}`
 
   return (
     <Link href={linkHref} className="block group">

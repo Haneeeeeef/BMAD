@@ -4,6 +4,7 @@ import { useEffect, useState, useCallback } from "react"
 import { useParams } from "next/navigation"
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip"
 import { Brain } from "lucide-react"
+import { authHeaders } from "@/lib/safe-storage"
 
 interface SessionStatus {
   tokens: number
@@ -23,7 +24,7 @@ export function ContextIndicator() {
       const url = sessionId
         ? `/api/session/status?sessionId=${sessionId}`
         : "/api/session/status"
-      const response = await fetch(url)
+      const response = await fetch(url, { headers: authHeaders() })
       if (response.ok) {
         const data = await response.json()
         setStatus(data)
@@ -80,8 +81,9 @@ export function ContextIndicator() {
       <TooltipTrigger asChild>
         <div
           className={`flex items-center gap-1.5 px-2 py-1 rounded-md text-xs font-medium ${getColor(status.percentage)} ${getBgColor(status.percentage)} cursor-default`}
+          aria-label={`Context usage: ${status.percentage}% - ${status.percentage < 50 ? "low" : status.percentage < 80 ? "moderate" : "high"}`}
         >
-          <Brain className="h-3.5 w-3.5" />
+          <Brain className="h-3.5 w-3.5" aria-hidden="true" />
           <span>{status.percentage}%</span>
         </div>
       </TooltipTrigger>

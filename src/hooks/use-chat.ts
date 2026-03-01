@@ -2,6 +2,8 @@
 
 import { useState, useCallback, useRef } from "react"
 import { Message, generateId } from "@/lib/types"
+import { safeGetItem, authHeaders } from "@/lib/safe-storage"
+import { parseSSEStream } from "@/lib/sse"
 
 interface UseChatOptions {
   initialMessages?: Message[]
@@ -12,7 +14,7 @@ interface UseChatOptions {
 function getUserToken(): string | null {
   if (typeof window === "undefined") return null
   try {
-    const stored = localStorage.getItem("mc_user")
+    const stored = safeGetItem("mc_user")
     if (stored) {
       const parsed = JSON.parse(stored)
       return parsed.token || null
@@ -58,7 +60,7 @@ export function useChat(options: UseChatOptions = {}) {
 
       const response = await fetch("/api/chat", {
         method: "POST",
-        headers: { "Content-Type": "application/json" },
+        headers: authHeaders({ "Content-Type": "application/json" }),
         body: JSON.stringify({
           messages: [...messages, userMessage].map((m) => ({
             role: m.role,
@@ -76,39 +78,17 @@ export function useChat(options: UseChatOptions = {}) {
       const reader = response.body?.getReader()
       if (!reader) throw new Error("No response body")
 
-      const decoder = new TextDecoder()
-      let fullContent = ""
-
-      while (true) {
-        const { done, value } = await reader.read()
-        if (done) break
-
-        const chunk = decoder.decode(value, { stream: true })
-        const lines = chunk.split("\n")
-
-        for (const line of lines) {
-          if (line.startsWith("data: ")) {
-            const data = line.slice(6)
-            if (data === "[DONE]") continue
-
-            try {
-              const json = JSON.parse(data)
-              if (json.content) {
-                fullContent += json.content
-                setMessages((prev) =>
-                  prev.map((m) =>
-                    m.id === assistantMessage.id
-                      ? { ...m, content: fullContent }
-                      : m
-                  )
-                )
-              }
-            } catch {
-              // Skip malformed JSON
-            }
-          }
-        }
-      }
+      const { content: fullContent } = await parseSSEStream(reader, {
+        onContent: (_chunk, full) => {
+          setMessages((prev) =>
+            prev.map((m) =>
+              m.id === assistantMessage.id
+                ? { ...m, content: full }
+                : m
+            )
+          )
+        },
+      })
 
       const finalMessage = { ...assistantMessage, content: fullContent }
       options.onFinish?.(finalMessage)

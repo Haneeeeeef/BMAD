@@ -21,16 +21,18 @@ import { Button } from "@/components/ui/button"
 import { ChatMessage } from "@/components/chat-message"
 import { ChatInput } from "@/components/chat-input"
 import {
-  Mission,
+  Project,
   Deliverable,
   DeliverableTask,
   DeliverableType,
   ValidationResult,
   getWorkflowById,
-  buildWorkflowStartCommand,
+  buildWorkflowSystemMessage,
+  buildWorkflowUserMessage,
   AVAILABLE_DELIVERABLES,
 } from "@/lib/bmad-types"
 import { Message, generateId } from "@/lib/types"
+import { authHeaders } from "@/lib/safe-storage"
 import {
   buildQASpawnInstruction,
   parseValidationResults,
@@ -38,17 +40,18 @@ import {
 import { ValidationPanel } from "@/components/validation-panel"
 import { DocumentPicker } from "@/components/document-picker"
 import { ContextViewer } from "@/components/context-viewer"
+import { parseSSEStream } from "@/lib/sse"
 
-type MissionWorkspaceProps = {
-  mission: Mission
-  onMissionUpdate: (mission: Mission) => void
+type ProjectWorkspaceProps = {
+  project: Project
+  onProjectUpdate: (project: Project) => void
 }
 
-export function MissionWorkspace({ mission, onMissionUpdate }: MissionWorkspaceProps) {
+export function ProjectWorkspace({ project, onProjectUpdate }: ProjectWorkspaceProps) {
   // Chat state - load from localStorage (per-deliverable)
   const [messages, setMessages] = useState<Message[]>(() => {
-    if (typeof window !== "undefined" && mission.currentDeliverable) {
-      const stored = localStorage.getItem(`mission-chat-${mission.id}-${mission.currentDeliverable}`)
+    if (typeof window !== "undefined" && project.currentDeliverable) {
+      const stored = localStorage.getItem(`project-chat-${project.id}-${project.currentDeliverable}`)
       if (stored) {
         try {
           return JSON.parse(stored)
@@ -76,8 +79,8 @@ export function MissionWorkspace({ mission, onMissionUpdate }: MissionWorkspaceP
   // Fetch context status from VPS
   const fetchContextStatus = useCallback(async () => {
     try {
-      const url = `/api/session/status?sessionId=${mission.sessionId}`
-      const response = await fetch(url)
+      const url = `/api/session/status?sessionId=${project.sessionId}`
+      const response = await fetch(url, { headers: authHeaders() })
       if (response.ok) {
         const data = await response.json()
         if (data.percentage !== undefined) {
@@ -87,7 +90,7 @@ export function MissionWorkspace({ mission, onMissionUpdate }: MissionWorkspaceP
     } catch {
       // Silent fail - VPS endpoint may not be configured
     }
-  }, [mission.sessionId])
+  }, [project.sessionId])
 
   // Poll context status
   useEffect(() => {
@@ -109,11 +112,11 @@ export function MissionWorkspace({ mission, onMissionUpdate }: MissionWorkspaceP
     try {
       await fetch("/api/session/clear", {
         method: "POST",
-        headers: { "Content-Type": "application/json" },
+        headers: authHeaders({ "Content-Type": "application/json" }),
         body: JSON.stringify({
           action: "flush",
-          sessionId: mission.sessionId,
-          projectName: mission.name,
+          sessionId: project.sessionId,
+          projectName: project.name,
         }),
       })
       fetchContextStatus()
@@ -131,17 +134,17 @@ export function MissionWorkspace({ mission, onMissionUpdate }: MissionWorkspaceP
     try {
       await fetch("/api/session/clear", {
         method: "POST",
-        headers: { "Content-Type": "application/json" },
+        headers: authHeaders({ "Content-Type": "application/json" }),
         body: JSON.stringify({
           action: "flush_and_clear",
-          sessionId: mission.sessionId,
-          projectName: mission.name,
+          sessionId: project.sessionId,
+          projectName: project.name,
         }),
       })
       // Clear local messages for current deliverable
       setMessages([])
-      if (mission.currentDeliverable) {
-        localStorage.removeItem(`mission-chat-${mission.id}-${mission.currentDeliverable}`)
+      if (project.currentDeliverable) {
+        localStorage.removeItem(`project-chat-${project.id}-${project.currentDeliverable}`)
       }
       workflowStarted.current = false
       fetchContextStatus()
@@ -154,10 +157,10 @@ export function MissionWorkspace({ mission, onMissionUpdate }: MissionWorkspaceP
 
   // Persist messages to localStorage (per-deliverable)
   useEffect(() => {
-    if (messages.length > 0 && mission.currentDeliverable) {
-      localStorage.setItem(`mission-chat-${mission.id}-${mission.currentDeliverable}`, JSON.stringify(messages))
+    if (messages.length > 0 && project.currentDeliverable) {
+      localStorage.setItem(`project-chat-${project.id}-${project.currentDeliverable}`, JSON.stringify(messages))
     }
-  }, [messages, mission.id, mission.currentDeliverable])
+  }, [messages, project.id, project.currentDeliverable])
 
 
   // QA Validation state
@@ -175,7 +178,7 @@ export function MissionWorkspace({ mission, onMissionUpdate }: MissionWorkspaceP
   // Track artifact paths per deliverable (extracted from chat messages)
   const [artifactPaths, setArtifactPaths] = useState<Record<string, string>>(() => {
     if (typeof window !== "undefined") {
-      const stored = localStorage.getItem(`mission-artifacts-${mission.id}`)
+      const stored = localStorage.getItem(`project-artifacts-${project.id}`)
       if (stored) {
         try {
           return JSON.parse(stored)
@@ -188,8 +191,8 @@ export function MissionWorkspace({ mission, onMissionUpdate }: MissionWorkspaceP
   })
 
   // Get current deliverable
-  const currentDeliverable = mission.deliverables.find(
-    (d) => d.id === mission.currentDeliverable
+  const currentDeliverable = project.deliverables.find(
+    (d) => d.id === project.currentDeliverable
   )
   const currentWorkflow = currentDeliverable
     ? getWorkflowById(currentDeliverable.workflowId)
@@ -208,13 +211,15 @@ export function MissionWorkspace({ mission, onMissionUpdate }: MissionWorkspaceP
   }, [messages])
 
   // Start workflow when deliverable becomes active
+  // MC tells Jarvis to delegate — Jarvis handles routing to the peer agent
   useEffect(() => {
     if (currentDeliverable && currentWorkflow && !workflowStarted.current && messages.length === 0) {
       workflowStarted.current = true
-      const command = buildWorkflowStartCommand(currentWorkflow, mission)
-      sendMessage(command, true)
+      const systemMsg = buildWorkflowSystemMessage(currentWorkflow, project)
+      const userMsg = buildWorkflowUserMessage(currentWorkflow)
+      sendMessage(userMsg, true, systemMsg)
     }
-  }, [currentDeliverable, currentWorkflow, mission, messages.length])
+  }, [currentDeliverable, currentWorkflow, project, messages.length])
 
   // Extract artifact paths from messages (e.g., "Saved to: /path/to/file.md")
   const extractArtifactPath = useCallback((content: string, deliverableId?: string) => {
@@ -232,35 +237,26 @@ export function MissionWorkspace({ mission, onMissionUpdate }: MissionWorkspaceP
       const match = content.match(pattern)
       if (match) {
         const path = match[1]
-        console.log("[DEBUG] extractArtifactPath matched:", path)
-        // Only update if it's a planning-artifacts or implementation-artifacts path
         if (path.includes("artifacts/")) {
-          console.log("[DEBUG] Setting artifact path for", targetDeliverableId, ":", path)
           setArtifactPaths(prev => {
             const updated = { ...prev, [targetDeliverableId]: path }
-            localStorage.setItem(`mission-artifacts-${mission.id}`, JSON.stringify(updated))
+            localStorage.setItem(`project-artifacts-${project.id}`, JSON.stringify(updated))
             return updated
           })
         }
         return
       }
     }
-  }, [currentDeliverable?.id, mission.id])
+  }, [currentDeliverable?.id, project.id])
 
   // Scan existing messages for artifact paths when deliverable changes
   useEffect(() => {
     if (messages.length > 0 && currentDeliverable && !artifactPaths[currentDeliverable.id]) {
-      console.log("[DEBUG] Scanning messages for artifact paths, deliverable:", currentDeliverable.id)
       for (const msg of messages) {
         if (msg.role === "assistant") {
-          // Check if message contains "Saved to:"
-          if (msg.content.includes("Saved to:")) {
-            console.log("[DEBUG] Found 'Saved to:' in message:", msg.content.substring(0, 200))
-          }
           extractArtifactPath(msg.content, currentDeliverable.id)
         }
       }
-      console.log("[DEBUG] Artifact paths after scan:", artifactPaths)
     }
   }, [messages.length, currentDeliverable?.id, extractArtifactPath, artifactPaths])
 
@@ -337,7 +333,7 @@ export function MissionWorkspace({ mission, onMissionUpdate }: MissionWorkspaceP
   const updateTaskProgress = (stepNum: number) => {
     if (!currentDeliverable) return
 
-    const updatedDeliverables = mission.deliverables.map((d) => {
+    const updatedDeliverables = project.deliverables.map((d) => {
       if (d.id !== currentDeliverable.id) return d
 
       const updatedTasks = d.tasks.map((task, i) => {
@@ -352,7 +348,7 @@ export function MissionWorkspace({ mission, onMissionUpdate }: MissionWorkspaceP
       return { ...d, tasks: updatedTasks, progress }
     })
 
-    onMissionUpdate({ ...mission, deliverables: updatedDeliverables })
+    onProjectUpdate({ ...project, deliverables: updatedDeliverables })
   }
 
   // QA Agent type
@@ -382,10 +378,10 @@ export function MissionWorkspace({ mission, onMissionUpdate }: MissionWorkspaceP
         // For now, we'll ask Jarvis to read the document
         const docResponse = await fetch("/api/chat", {
           method: "POST",
-          headers: { "Content-Type": "application/json" },
+          headers: authHeaders({ "Content-Type": "application/json" }),
           body: JSON.stringify({
             messages: [{ role: "user", content: `Read and output the raw content of ${documentPath} with no commentary or explanation.` }],
-            sessionId: mission.sessionId,
+            sessionId: project.sessionId,
           }),
         })
 
@@ -394,42 +390,17 @@ export function MissionWorkspace({ mission, onMissionUpdate }: MissionWorkspaceP
         const reader = docResponse.body?.getReader()
         if (!reader) throw new Error("No reader")
 
-        let documentContent = ""
-        const decoder = new TextDecoder()
-
-        while (true) {
-          const { done, value } = await reader.read()
-          if (done) break
-
-          const chunk = decoder.decode(value)
-          const lines = chunk.split("\n")
-
-          for (const line of lines) {
-            if (line.startsWith("data: ")) {
-              const data = line.slice(6)
-              if (data === "[DONE]") continue
-
-              try {
-                const json = JSON.parse(data)
-                if (json.content) {
-                  documentContent += json.content
-                }
-              } catch {
-                // Skip parse errors
-              }
-            }
-          }
-        }
+        const { content: documentContent } = await parseSSEStream(reader)
 
         // Now call Gemini QA API
         const qaResponse = await fetch("/api/qa/gemini", {
           method: "POST",
-          headers: { "Content-Type": "application/json" },
+          headers: authHeaders({ "Content-Type": "application/json" }),
           body: JSON.stringify({
             deliverableType: currentDeliverable.type,
             documentContent,
             chatHistory,
-            projectName: mission.name,
+            projectName: project.name,
           }),
         })
 
@@ -442,20 +413,23 @@ export function MissionWorkspace({ mission, onMissionUpdate }: MissionWorkspaceP
         setValidationScore(score)
         setValidationSummary(summary + ` (Reviewed by ${qaData.model})`)
       } else {
-        // Jarvis validation (original logic)
+        // Jarvis delegates QA validation to qa agent via sessions_send
         const documentPath = `planning-artifacts/${currentDeliverable.type}.md`
         const qaInstruction = buildQASpawnInstruction(
           currentDeliverable.type,
           documentPath,
-          mission.name
+          project.name
         )
+
+        // Tell Jarvis to send QA task to the qa peer agent
+        const delegationMsg = `Validate the ${currentDeliverable.type} document. Use sessions_send to delegate to the "qa" agent with this instruction:\n\n${qaInstruction}`
 
         const response = await fetch("/api/chat", {
           method: "POST",
-          headers: { "Content-Type": "application/json" },
+          headers: authHeaders({ "Content-Type": "application/json" }),
           body: JSON.stringify({
-            messages: [{ role: "user", content: `/subagents spawn qa-validator "${qaInstruction}"` }],
-            sessionId: mission.sessionId,
+            messages: [{ role: "user", content: delegationMsg }],
+            sessionId: project.sessionId,
           }),
         })
 
@@ -464,32 +438,7 @@ export function MissionWorkspace({ mission, onMissionUpdate }: MissionWorkspaceP
         const reader = response.body?.getReader()
         if (!reader) throw new Error("No reader")
 
-        let fullResponse = ""
-        const decoder = new TextDecoder()
-
-        while (true) {
-          const { done, value } = await reader.read()
-          if (done) break
-
-          const chunk = decoder.decode(value)
-          const lines = chunk.split("\n")
-
-          for (const line of lines) {
-            if (line.startsWith("data: ")) {
-              const data = line.slice(6)
-              if (data === "[DONE]") continue
-
-              try {
-                const json = JSON.parse(data)
-                if (json.content) {
-                  fullResponse += json.content
-                }
-              } catch {
-                // Skip parse errors
-              }
-            }
-          }
-        }
+        const { content: fullResponse } = await parseSSEStream(reader)
 
         const { results, score, summary } = parseValidationResults(fullResponse)
         setValidationResults(results)
@@ -499,7 +448,7 @@ export function MissionWorkspace({ mission, onMissionUpdate }: MissionWorkspaceP
 
       // Update deliverable with validation
       if (validationResults.length > 0) {
-        const updatedDeliverables = mission.deliverables.map((d) =>
+        const updatedDeliverables = project.deliverables.map((d) =>
           d.id === currentDeliverable.id
             ? {
                 ...d,
@@ -509,7 +458,7 @@ export function MissionWorkspace({ mission, onMissionUpdate }: MissionWorkspaceP
               }
             : d
         )
-        onMissionUpdate({ ...mission, deliverables: updatedDeliverables })
+        onProjectUpdate({ ...project, deliverables: updatedDeliverables })
       }
     } catch (error) {
       console.error("Validation error:", error)
@@ -517,7 +466,7 @@ export function MissionWorkspace({ mission, onMissionUpdate }: MissionWorkspaceP
     } finally {
       setIsValidating(false)
     }
-  }, [currentDeliverable, currentWorkflow, mission, onMissionUpdate, messages, validationResults, validationScore])
+  }, [currentDeliverable, currentWorkflow, project, onProjectUpdate, messages, validationResults, validationScore])
 
   // Auto-run QA when deliverable completes
   useEffect(() => {
@@ -529,26 +478,26 @@ export function MissionWorkspace({ mission, onMissionUpdate }: MissionWorkspaceP
       validationResults.length === 0
     ) {
       // Mark as complete first
-      const updatedDeliverables = mission.deliverables.map((d) =>
+      const updatedDeliverables = project.deliverables.map((d) =>
         d.id === currentDeliverable.id
           ? { ...d, status: "complete" as const, completedAt: Date.now() }
           : d
       )
-      onMissionUpdate({ ...mission, deliverables: updatedDeliverables })
+      onProjectUpdate({ ...project, deliverables: updatedDeliverables })
 
       // Auto-run validation after brief delay
       setTimeout(() => {
         runQAValidation()
       }, 1000)
     }
-  }, [currentDeliverable, isValidating, validationResults.length, mission, onMissionUpdate, runQAValidation])
+  }, [currentDeliverable, isValidating, validationResults.length, project, onProjectUpdate, runQAValidation])
 
   // Accept validation and move to next deliverable
   const acceptAndContinue = () => {
     if (!currentDeliverable) return
 
     // Find next queued deliverable
-    const nextDeliverable = mission.deliverables.find(
+    const nextDeliverable = project.deliverables.find(
       (d) => d.status === "queued"
     )
 
@@ -558,10 +507,10 @@ export function MissionWorkspace({ mission, onMissionUpdate }: MissionWorkspaceP
       setMessages([])
       setValidationResults([])
       setValidationScore(undefined)
-      onMissionUpdate({
-        ...mission,
+      onProjectUpdate({
+        ...project,
         currentDeliverable: nextDeliverable.id,
-        deliverables: mission.deliverables.map((d) =>
+        deliverables: project.deliverables.map((d) =>
           d.id === nextDeliverable.id
             ? { ...d, status: "in-progress", startedAt: Date.now() }
             : d
@@ -570,9 +519,9 @@ export function MissionWorkspace({ mission, onMissionUpdate }: MissionWorkspaceP
     }
   }
 
-  // Send message to Jarvis
+  // Send message to Jarvis (all MC traffic routes through Jarvis as orchestrator)
   const sendMessage = useCallback(
-    async (content: string, isInitial = false) => {
+    async (content: string, isInitial = false, systemMessage?: string) => {
       const userMsg: Message = {
         id: generateId(),
         role: "user",
@@ -590,13 +539,18 @@ export function MissionWorkspace({ mission, onMissionUpdate }: MissionWorkspaceP
         // Sending full history would cause double injection since Kimi already has the conversation
         const messagesToSend = [{ role: "user" as const, content }]
 
+        const payload: Record<string, unknown> = {
+          messages: messagesToSend,
+          sessionId: project.sessionId,
+        }
+        if (systemMessage) {
+          payload.systemMessage = systemMessage
+        }
+
         const response = await fetch("/api/chat", {
           method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({
-            messages: messagesToSend,
-            sessionId: mission.sessionId,
-          }),
+          headers: authHeaders({ "Content-Type": "application/json" }),
+          body: JSON.stringify(payload),
         })
 
         if (!response.ok) throw new Error("Failed")
@@ -607,70 +561,55 @@ export function MissionWorkspace({ mission, onMissionUpdate }: MissionWorkspaceP
         let assistantContent = ""
         let assistantReasoning = ""
         const assistantMsgId = generateId()
-        const decoder = new TextDecoder()
 
-        while (true) {
-          const { done, value } = await reader.read()
-          if (done) break
-
-          const chunk = decoder.decode(value)
-          const lines = chunk.split("\n")
-
-          for (const line of lines) {
-            if (line.startsWith("data: ")) {
-              const data = line.slice(6)
-              if (data === "[DONE]") continue
-
-              try {
-                const json = JSON.parse(data)
-
-                // Capture reasoning (Kimi K2.5 uses reasoning_content field)
-                // Check multiple locations: direct field, choices[0].delta, choices[0].message
-                const reasoning = json.reasoning_content
-                  || json.reasoning
-                  || json.choices?.[0]?.delta?.reasoning_content
-                  || json.choices?.[0]?.message?.reasoning_content
-                if (reasoning) {
-                  assistantReasoning += reasoning
-                }
-
-                // Capture content (check multiple locations for streaming)
-                const content = json.content
-                  || json.choices?.[0]?.delta?.content
-                  || json.choices?.[0]?.message?.content
-                if (content) {
-                  assistantContent += content
-                }
-
-                // Update message with both reasoning and content
-                if (content || reasoning) {
-                  setMessages((prev) => {
-                    const exists = prev.find((m) => m.id === assistantMsgId)
-                    if (exists) {
-                      return prev.map((m) =>
-                        m.id === assistantMsgId
-                          ? { ...m, content: assistantContent, reasoning: assistantReasoning || undefined }
-                          : m
-                      )
-                    }
-                    return [
-                      ...prev,
-                      {
-                        id: assistantMsgId,
-                        role: "assistant" as const,
-                        content: assistantContent,
-                        reasoning: assistantReasoning || undefined,
-                        createdAt: Date.now(),
-                      },
-                    ]
-                  })
-                }
-              } catch {
-                // Skip parse errors
+        await parseSSEStream(reader, {
+          onReasoning: (_chunk, full) => {
+            assistantReasoning = full
+            setMessages((prev) => {
+              const exists = prev.find((m) => m.id === assistantMsgId)
+              if (exists) {
+                return prev.map((m) =>
+                  m.id === assistantMsgId
+                    ? { ...m, reasoning: assistantReasoning || undefined }
+                    : m
+                )
               }
-            }
-          }
-        }
+              return [
+                ...prev,
+                {
+                  id: assistantMsgId,
+                  role: "assistant" as const,
+                  content: assistantContent,
+                  reasoning: assistantReasoning || undefined,
+                  createdAt: Date.now(),
+                },
+              ]
+            })
+          },
+          onContent: (_chunk, full) => {
+            assistantContent = full
+            setMessages((prev) => {
+              const exists = prev.find((m) => m.id === assistantMsgId)
+              if (exists) {
+                return prev.map((m) =>
+                  m.id === assistantMsgId
+                    ? { ...m, content: assistantContent, reasoning: assistantReasoning || undefined }
+                    : m
+                )
+              }
+              return [
+                ...prev,
+                {
+                  id: assistantMsgId,
+                  role: "assistant" as const,
+                  content: assistantContent,
+                  reasoning: assistantReasoning || undefined,
+                  createdAt: Date.now(),
+                },
+              ]
+            })
+          },
+        })
 
         // Parse task progress and extract artifact paths after message completes
         parseTaskProgress(assistantContent)
@@ -688,7 +627,7 @@ export function MissionWorkspace({ mission, onMissionUpdate }: MissionWorkspaceP
         const isDocComplete = completionPatterns.some(p => p.test(assistantContent))
         if (isDocComplete && currentDeliverable) {
           // Mark all tasks as complete
-          const updatedDeliverables = mission.deliverables.map((d) => {
+          const updatedDeliverables = project.deliverables.map((d) => {
             if (d.id !== currentDeliverable.id) return d
             return {
               ...d,
@@ -696,7 +635,7 @@ export function MissionWorkspace({ mission, onMissionUpdate }: MissionWorkspaceP
               tasks: d.tasks.map(t => ({ ...t, status: "complete" as const })),
             }
           })
-          onMissionUpdate({ ...mission, deliverables: updatedDeliverables })
+          onProjectUpdate({ ...project, deliverables: updatedDeliverables })
         }
       } catch (error) {
         console.error("Chat error:", error)
@@ -713,13 +652,33 @@ export function MissionWorkspace({ mission, onMissionUpdate }: MissionWorkspaceP
         setIsLoading(false)
       }
     },
-    [messages, mission, parseTaskProgress, extractArtifactPath, currentDeliverable, onMissionUpdate]
+    [messages, project, parseTaskProgress, extractArtifactPath, currentDeliverable, onProjectUpdate]
   )
+
+  // Delete a deliverable
+  const deleteDeliverable = (deliverableId: string) => {
+    const updated = project.deliverables.filter(d => d.id !== deliverableId)
+
+    // If we deleted the current one, switch to first remaining or null
+    let newCurrent = project.currentDeliverable
+    if (project.currentDeliverable === deliverableId) {
+      newCurrent = updated[0]?.id || null
+    }
+
+    // Clean up localStorage for this deliverable
+    localStorage.removeItem(`project-chat-${project.id}-${deliverableId}`)
+
+    onProjectUpdate({
+      ...project,
+      deliverables: updated,
+      currentDeliverable: newCurrent,
+    })
+  }
 
   // Start or switch to a deliverable
   const startDeliverable = (deliverableId: string) => {
     // Load existing messages for this deliverable (if any)
-    const stored = localStorage.getItem(`mission-chat-${mission.id}-${deliverableId}`)
+    const stored = localStorage.getItem(`project-chat-${project.id}-${deliverableId}`)
     let existingMessages: Message[] = []
     if (stored) {
       try {
@@ -735,13 +694,13 @@ export function MissionWorkspace({ mission, onMissionUpdate }: MissionWorkspaceP
     setMessages(existingMessages)
 
     // Update deliverable status
-    const deliverable = mission.deliverables.find(d => d.id === deliverableId)
+    const deliverable = project.deliverables.find(d => d.id === deliverableId)
     const isNew = deliverable?.status === "queued"
 
-    onMissionUpdate({
-      ...mission,
+    onProjectUpdate({
+      ...project,
       currentDeliverable: deliverableId,
-      deliverables: mission.deliverables.map((d) =>
+      deliverables: project.deliverables.map((d) =>
         d.id === deliverableId && isNew
           ? { ...d, status: "in-progress", startedAt: Date.now() }
           : d
@@ -767,20 +726,20 @@ export function MissionWorkspace({ mission, onMissionUpdate }: MissionWorkspaceP
         workflowId: template.workflowId,
         name: template.name,
         description: template.description,
-        status: mission.deliverables.length === 0 && index === 0 ? "in-progress" : "queued",
+        status: project.deliverables.length === 0 && index === 0 ? "in-progress" : "queued",
         progress: 0,
         tasks,
       }
     })
 
-    const updatedDeliverables = [...mission.deliverables, ...newDeliverables]
+    const updatedDeliverables = [...project.deliverables, ...newDeliverables]
     const firstNew = newDeliverables[0]
 
-    onMissionUpdate({
-      ...mission,
+    onProjectUpdate({
+      ...project,
       deliverables: updatedDeliverables,
-      inputDocuments: [...(mission.inputDocuments || []), ...inputDocs.map(f => f.name)],
-      currentDeliverable: mission.currentDeliverable || firstNew?.id || null,
+      inputDocuments: [...(project.inputDocuments || []), ...inputDocs.map(f => f.name)],
+      currentDeliverable: project.currentDeliverable || firstNew?.id || null,
     })
 
     setShowDocPicker(false)
@@ -796,9 +755,9 @@ export function MissionWorkspace({ mission, onMissionUpdate }: MissionWorkspaceP
     const deliverableName = currentDeliverable?.name || "chat"
     const timestamp = new Date().toISOString().split("T")[0]
 
-    let content = `# ${mission.name} - ${deliverableName} Transcript\n\n`
+    let content = `# ${project.name} - ${deliverableName} Transcript\n\n`
     content += `**Date:** ${new Date().toLocaleDateString()}\n`
-    content += `**Session:** ${mission.sessionId}\n\n`
+    content += `**Session:** ${project.sessionId}\n\n`
     content += `---\n\n`
 
     for (const msg of messages) {
@@ -816,7 +775,7 @@ export function MissionWorkspace({ mission, onMissionUpdate }: MissionWorkspaceP
     a.download = `${deliverableName.toLowerCase().replace(/\s+/g, "-")}-transcript-${timestamp}.md`
     a.click()
     URL.revokeObjectURL(url)
-  }, [messages, currentDeliverable?.name, mission.name, mission.sessionId])
+  }, [messages, currentDeliverable?.name, project.name, project.sessionId])
 
   return (
     <div className="h-screen flex flex-col bg-white">
@@ -832,7 +791,7 @@ export function MissionWorkspace({ mission, onMissionUpdate }: MissionWorkspaceP
                 <ArrowLeft className="h-4 w-4 text-zinc-500" />
               </Link>
               <h1 className="font-semibold text-zinc-900">
-                {mission.name}
+                {project.name}
               </h1>
             </div>
 
@@ -939,12 +898,13 @@ export function MissionWorkspace({ mission, onMissionUpdate }: MissionWorkspaceP
         <DocumentPicker
           onConfirm={handleAddDeliverables}
           onCancel={() => setShowDocPicker(false)}
+          existingTypes={project.deliverables.map(d => d.type)}
         />
       )}
 
       {/* Context Viewer Modal */}
       <ContextViewer
-        projectName={mission.name.toLowerCase().replace(/\s+/g, "-")}
+        projectName={project.name.toLowerCase().replace(/\s+/g, "-")}
         isOpen={showContextViewer}
         onClose={() => setShowContextViewer(false)}
       />
@@ -952,217 +912,163 @@ export function MissionWorkspace({ mission, onMissionUpdate }: MissionWorkspaceP
       {/* Main Content - 3 Columns */}
       <div className="flex-1 flex overflow-hidden">
         {/* Left: Deliverables Queue */}
-        <aside className="w-56 shrink-0 bg-white border-r border-zinc-200 overflow-y-auto">
-          <div className="p-4 border-b border-zinc-100">
+        <aside className="w-60 shrink-0 bg-zinc-50 dark:bg-zinc-950 border-r border-zinc-200 dark:border-zinc-800 overflow-y-auto">
+          <div className="p-4 border-b border-zinc-200 dark:border-zinc-800">
             <div className="flex items-center justify-between">
               <h2 className="text-xs font-semibold text-zinc-500 uppercase tracking-wider">
-                Queue
+                Deliverables
               </h2>
-              {mission.deliverables.length > 0 && (
+              {project.deliverables.length > 0 && (
                 <button
                   onClick={() => setShowDocPicker(true)}
-                  className="p-1.5 hover:bg-zinc-100 rounded-lg transition-colors"
+                  className="p-1.5 hover:bg-white dark:hover:bg-zinc-800 rounded-lg transition-colors shadow-sm"
                   title="Add deliverables"
                 >
-                  <Plus className="h-4 w-4 text-zinc-400" />
+                  <Plus className="h-4 w-4 text-zinc-500" />
                 </button>
               )}
             </div>
           </div>
-          {mission.deliverables.length === 0 ? (
+          {project.deliverables.length === 0 ? (
             <div className="text-center py-12 px-4">
-              <div className="w-12 h-12 mx-auto mb-4 rounded-full bg-zinc-100 flex items-center justify-center">
-                <FileText className="h-6 w-6 text-zinc-400" />
+              <div className="w-14 h-14 mx-auto mb-4 rounded-xl bg-white dark:bg-zinc-900 shadow-sm flex items-center justify-center">
+                <span className="text-2xl">📄</span>
               </div>
-              <p className="text-sm text-zinc-500 mb-4">No deliverables</p>
-              <Button
+              <p className="text-sm text-zinc-500 mb-4">No deliverables yet</p>
+              <button
                 onClick={() => setShowDocPicker(true)}
-                className="bg-[var(--brand)] hover:bg-[var(--brand-hover)] text-white"
-                size="sm"
+                className="h-10 px-5 rounded-lg bg-[var(--brand)] hover:bg-[var(--brand-hover)] text-white text-sm font-medium transition-colors"
               >
-                <Plus className="h-4 w-4 mr-1" />
-                Add
-              </Button>
+                Add Deliverable
+              </button>
             </div>
           ) : (
-            <div className="p-2 space-y-2">
-              {mission.deliverables.map((d, i) => (
+            <div className="p-3 space-y-2">
+              {project.deliverables.map((d, i) => (
                 <DeliverableCard
                   key={d.id}
                   deliverable={d}
-                  isActive={d.id === mission.currentDeliverable}
+                  isActive={d.id === project.currentDeliverable}
                   onStart={() => startDeliverable(d.id)}
+                  onDelete={() => deleteDeliverable(d.id)}
                   index={i + 1}
                   artifactPath={artifactPaths[d.id]}
                 />
               ))}
+
+              {/* Add more button at bottom */}
+              <button
+                onClick={() => setShowDocPicker(true)}
+                className="w-full p-3 rounded-lg border-2 border-dashed border-zinc-200 dark:border-zinc-700 text-zinc-400 hover:border-zinc-300 dark:hover:border-zinc-600 hover:text-zinc-500 transition-colors text-sm"
+              >
+                + Add more
+              </button>
             </div>
           )}
         </aside>
 
-        {/* Middle: Mission Control Panel */}
-        <aside className="w-72 shrink-0 bg-zinc-50 border-r border-zinc-200 overflow-y-auto">
-          {currentDeliverable ? (
-            <div className="flex flex-col h-full">
-              {/* Progress Overview */}
-              <div className="p-4 border-b border-zinc-200 bg-white">
-                <div className="flex items-center justify-between mb-2">
-                  <span className="text-xs font-medium text-zinc-500 uppercase tracking-wider">Progress</span>
-                  <span className="text-2xl font-bold text-zinc-900">{calculatedProgress}%</span>
+        {/* Main: Chat Area (2-column layout) */}
+        <main className="flex-1 flex flex-col min-w-0 min-h-0 bg-white">
+          {/* Progress Header with Checklist - Always Visible */}
+          {currentDeliverable && (
+            <div className="shrink-0 border-b border-zinc-200 bg-white">
+              {/* Title + Progress Bar */}
+              <div className="flex items-center justify-between px-6 py-3 border-b border-zinc-100">
+                <div className="flex items-center gap-4">
+                  <span className="text-sm font-medium text-zinc-700">
+                    {currentDeliverable.name}
+                  </span>
+                  <div className="flex items-center gap-2">
+                    <div className="w-32 h-1.5 bg-zinc-200 rounded-full overflow-hidden">
+                      <div
+                        className="h-full bg-[var(--brand)] transition-all duration-300"
+                        style={{ width: `${calculatedProgress}%` }}
+                      />
+                    </div>
+                    <span className="text-xs text-zinc-500">{calculatedProgress}%</span>
+                  </div>
                 </div>
-                <div className="h-2 bg-zinc-200 rounded-full overflow-hidden">
-                  <div
-                    className="h-full bg-gradient-to-r from-emerald-500 to-emerald-400 transition-all duration-500"
-                    style={{ width: `${calculatedProgress}%` }}
-                  />
-                </div>
-                <div className="mt-2 text-xs text-zinc-500">
-                  {currentDeliverable.tasks.filter(t => t.status === "complete").length} of {currentDeliverable.tasks.length} steps
+                <div className="flex items-center gap-2">
+                  {calculatedProgress >= 100 && validationResults.length === 0 && (
+                    <button
+                      onClick={() => runQAValidation("gemini")}
+                      className="px-3 py-1 text-xs font-medium bg-[var(--brand)] text-white rounded-md hover:bg-[var(--brand-hover)] transition-colors"
+                    >
+                      Run QA
+                    </button>
+                  )}
+                  {validationScore !== undefined && (
+                    <span className={`px-2 py-1 text-xs font-bold rounded-md ${
+                      validationScore >= 90 ? "bg-emerald-100 text-emerald-700" :
+                      validationScore >= 70 ? "bg-amber-100 text-amber-700" :
+                      "bg-red-100 text-red-700"
+                    }`}>
+                      QA: {validationScore}/100
+                    </span>
+                  )}
                 </div>
               </div>
 
-
-              {/* Task Checklist */}
-              <div className="flex-1 p-4">
-                <div className="text-xs font-medium text-zinc-500 uppercase tracking-wider mb-3">Checklist</div>
-                <div className="space-y-1">
+              {/* Checklist - Always Visible */}
+              <div className="px-6 py-3 bg-zinc-50/50">
+                <div className="flex flex-wrap gap-2">
                   {currentDeliverable.tasks.map((task, i) => (
                     <div
                       key={task.id}
-                      className={`flex items-center gap-3 px-3 py-2 rounded-lg transition-all ${
+                      className={`flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-medium transition-all ${
                         task.status === "active"
-                          ? "bg-[var(--brand)]/10 border border-[var(--brand)]/20"
+                          ? "bg-[var(--brand)] text-white shadow-sm"
                           : task.status === "complete"
-                          ? "bg-emerald-50"
-                          : "bg-zinc-100"
+                          ? "bg-emerald-100 text-emerald-700"
+                          : "bg-white text-zinc-400 border border-zinc-200"
                       }`}
                     >
                       {task.status === "complete" ? (
-                        <CheckCircle2 className="h-4 w-4 text-emerald-500 shrink-0" />
+                        <CheckCircle2 className="h-3 w-3 shrink-0" />
                       ) : task.status === "active" ? (
-                        <div className="w-4 h-4 rounded-full border-2 border-[var(--brand)] flex items-center justify-center shrink-0">
-                          <div className="w-2 h-2 bg-[var(--brand)] rounded-full animate-pulse" />
+                        <div className="w-3 h-3 rounded-full border-2 border-white/60 flex items-center justify-center shrink-0">
+                          <div className="w-1.5 h-1.5 bg-white rounded-full animate-pulse" />
                         </div>
                       ) : (
-                        <Circle className="h-4 w-4 text-zinc-400 shrink-0" />
+                        <span className="w-3 h-3 flex items-center justify-center text-[10px] font-medium">{i + 1}</span>
                       )}
-                      <span className={`text-sm truncate ${
-                        task.status === "active"
-                          ? "text-zinc-900 font-medium"
-                          : task.status === "complete"
-                          ? "text-emerald-700"
-                          : "text-zinc-500"
-                      }`}>
-                        {task.name}
-                      </span>
+                      <span className="truncate max-w-[120px]">{task.name}</span>
                     </div>
                   ))}
                 </div>
               </div>
 
-              {/* QA Section - Always Visible */}
-              <div className="p-4 border-t border-zinc-200 bg-white">
-                <div className="flex items-center justify-between mb-3">
-                  <div className="text-xs font-medium text-zinc-500 uppercase tracking-wider">QA Review</div>
-                  {validationScore !== undefined && (
-                    <div className={`text-lg font-bold ${
-                      validationScore >= 90 ? "text-emerald-600" :
-                      validationScore >= 70 ? "text-amber-600" :
-                      "text-red-600"
-                    }`}>
-                      {validationScore}/100
-                    </div>
-                  )}
-                </div>
-
-                {isValidating ? (
-                  <div className="flex items-center gap-3 p-3 bg-zinc-100 rounded-lg">
-                    <Loader2 className="h-5 w-5 text-[var(--brand)] animate-spin" />
-                    <div>
-                      <div className="text-sm text-zinc-900">Validating...</div>
-                      <div className="text-xs text-zinc-500">Using {qaAgent === "gemini" ? "Gemini" : "Jarvis"}</div>
-                    </div>
-                  </div>
-                ) : validationResults.length > 0 ? (
-                  <div className="space-y-2">
-                    {/* Quick stats */}
-                    <div className="flex gap-2">
-                      <div className="flex-1 p-2 bg-emerald-50 rounded-lg text-center">
-                        <div className="text-lg font-bold text-emerald-600">
-                          {validationResults.filter(r => r.status === "pass").length}
-                        </div>
-                        <div className="text-xs text-zinc-500">Pass</div>
-                      </div>
-                      <div className="flex-1 p-2 bg-amber-50 rounded-lg text-center">
-                        <div className="text-lg font-bold text-amber-600">
-                          {validationResults.filter(r => r.status === "warn").length}
-                        </div>
-                        <div className="text-xs text-zinc-500">Warn</div>
-                      </div>
-                      <div className="flex-1 p-2 bg-red-50 rounded-lg text-center">
-                        <div className="text-lg font-bold text-red-600">
-                          {validationResults.filter(r => r.status === "fail").length}
-                        </div>
-                        <div className="text-xs text-zinc-500">Fail</div>
-                      </div>
+              {/* QA Results - Show when available */}
+              {validationResults.length > 0 && (
+                <div className="px-6 py-3 border-t border-zinc-100 bg-white flex items-center justify-between">
+                  <div className="flex items-center gap-4">
+                    <div className="flex items-center gap-1.5 text-xs">
+                      <span className="px-2 py-0.5 bg-emerald-100 text-emerald-700 rounded font-medium">
+                        {validationResults.filter(r => r.status === "pass").length} Pass
+                      </span>
+                      <span className="px-2 py-0.5 bg-amber-100 text-amber-700 rounded font-medium">
+                        {validationResults.filter(r => r.status === "warn").length} Warn
+                      </span>
+                      <span className="px-2 py-0.5 bg-red-100 text-red-700 rounded font-medium">
+                        {validationResults.filter(r => r.status === "fail").length} Fail
+                      </span>
                     </div>
                     {validationSummary && (
-                      <p className="text-xs text-zinc-500 italic">{validationSummary}</p>
+                      <span className="text-xs text-zinc-500">{validationSummary}</span>
                     )}
-                    <Button
-                      onClick={acceptAndContinue}
-                      size="sm"
-                      className="w-full bg-emerald-600 hover:bg-emerald-700 text-white"
-                      disabled={validationResults.some(r => r.status === "fail")}
-                    >
-                      Accept & Continue
-                    </Button>
                   </div>
-                ) : calculatedProgress >= 100 ? (
-                  <div className="space-y-3">
-                    <p className="text-xs text-zinc-500">Document ready for review</p>
-                    <div className="flex gap-2">
-                      <Button
-                        onClick={() => runQAValidation("gemini")}
-                        size="sm"
-                        className="flex-1 bg-blue-600 hover:bg-blue-700 text-white text-xs"
-                      >
-                        Gemini QA
-                      </Button>
-                      <Button
-                        onClick={() => runQAValidation("jarvis")}
-                        size="sm"
-                        variant="outline"
-                        className="flex-1 text-xs"
-                      >
-                        Jarvis QA
-                      </Button>
-                    </div>
-                  </div>
-                ) : (
-                  <div className="p-3 bg-zinc-50 rounded-lg border border-dashed border-zinc-300">
-                    <div className="flex items-center gap-2 text-zinc-500">
-                      <div className="w-6 h-6 rounded-full border-2 border-zinc-300 flex items-center justify-center">
-                        <span className="text-xs">?</span>
-                      </div>
-                      <div>
-                        <div className="text-sm text-zinc-600">Pending</div>
-                        <div className="text-xs">Complete workflow first</div>
-                      </div>
-                    </div>
-                  </div>
-                )}
-              </div>
-            </div>
-          ) : (
-            <div className="p-4 text-center">
-              <p className="text-sm text-zinc-500">Select a deliverable</p>
+                  <button
+                    onClick={acceptAndContinue}
+                    disabled={validationResults.some(r => r.status === "fail")}
+                    className="px-4 py-1.5 text-xs font-medium bg-emerald-600 text-white rounded-lg hover:bg-emerald-700 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+                  >
+                    Accept & Continue
+                  </button>
+                </div>
+              )}
             </div>
           )}
-        </aside>
 
-        {/* Right: Chat Area */}
-        <main className="flex-1 flex flex-col min-w-0 min-h-0 bg-white">
           {/* Chat Messages */}
           <div className="flex-1 overflow-y-auto px-6 py-4 min-h-0">
             <div className="max-w-2xl mx-auto space-y-1">
@@ -1235,21 +1141,26 @@ export function MissionWorkspace({ mission, onMissionUpdate }: MissionWorkspaceP
   )
 }
 
-// Deliverable Card Component
+// Deliverable Card Component - Matches SelectionCard pattern from screens 1,2,3
 function DeliverableCard({
   deliverable,
   isActive,
   onStart,
-  index,
+  onDelete,
   artifactPath,
 }: {
   deliverable: Deliverable
   isActive: boolean
   onStart: () => void
+  onDelete: () => void
   index: number
   artifactPath?: string
 }) {
   const [downloading, setDownloading] = React.useState(false)
+
+  // Get emoji from AVAILABLE_DELIVERABLES
+  const template = AVAILABLE_DELIVERABLES.find(d => d.type === deliverable.type)
+  const emoji = template?.icon || "📄"
 
   const handleDownload = async (e: React.MouseEvent) => {
     e.stopPropagation()
@@ -1257,10 +1168,11 @@ function DeliverableCard({
 
     setDownloading(true)
     try {
-      const response = await fetch(`/api/artifacts?path=${encodeURIComponent(artifactPath)}`)
+      const response = await fetch(`/api/artifacts?path=${encodeURIComponent(artifactPath)}`, {
+        headers: authHeaders(),
+      })
       if (response.ok) {
         const data = await response.json()
-        // Create download
         const blob = new Blob([data.content], { type: "text/markdown" })
         const url = URL.createObjectURL(blob)
         const a = document.createElement("a")
@@ -1277,56 +1189,104 @@ function DeliverableCard({
   }
 
   const isComplete = deliverable.status === "complete" || deliverable.status === "validated"
+  const isQueued = deliverable.status === "queued"
 
   return (
-    <div
-      className={`relative p-3 rounded-lg transition-all cursor-pointer ${
-        isActive
-          ? "bg-[var(--brand)]/10 border-2 border-[var(--brand)]"
-          : deliverable.status === "validated"
-          ? "bg-emerald-50 border border-emerald-200"
-          : deliverable.status === "complete"
-          ? "bg-blue-50 border border-blue-200"
-          : "bg-white border border-zinc-200 hover:border-zinc-300"
-      }`}
-      onClick={() => deliverable.status === "queued" && onStart()}
+    <button
+      type="button"
+      onClick={onStart}
+      className={`
+        relative w-full flex flex-col items-center p-4 rounded-lg shadow-sm overflow-hidden
+        transition-all duration-200 text-left
+        focus:outline-none focus-visible:ring-2 focus-visible:ring-[var(--brand)] focus-visible:ring-offset-2
+        ${isActive
+          ? "bg-[var(--brand)]/[0.03]"
+          : isComplete
+          ? "bg-emerald-50/50"
+          : "bg-white hover:shadow-md"
+        }
+      `}
     >
-      <div className="flex items-center gap-3">
-        <div className={`w-6 h-6 rounded flex items-center justify-center text-xs font-bold shrink-0 ${
-          isActive
-            ? "bg-[var(--brand)] text-white"
-            : deliverable.status === "validated"
-            ? "bg-emerald-500 text-white"
-            : "bg-zinc-200 text-zinc-600"
-        }`}>
-          {deliverable.status === "validated" ? "✓" : index}
+      {/* Emoji */}
+      <span className={`text-2xl mb-2 transition-transform duration-200 ${isActive ? "scale-110" : ""}`}>
+        {isComplete ? "✅" : emoji}
+      </span>
+
+      {/* Title */}
+      <span className={`text-sm font-medium text-center transition-colors duration-200 ${
+        isActive
+          ? "text-zinc-900"
+          : isComplete
+          ? "text-emerald-700"
+          : "text-zinc-600"
+      }`}>
+        {deliverable.name}
+      </span>
+
+      {/* Progress bar for in-progress */}
+      {deliverable.status === "in-progress" && deliverable.tasks.length > 0 && (
+        <div className="w-full mt-2 px-2">
+          <div className="h-1 bg-zinc-200 rounded-full overflow-hidden">
+            <div
+              className="h-full bg-[var(--brand)] transition-all duration-300"
+              style={{ width: `${Math.round((deliverable.tasks.filter(t => t.status === "complete").length / deliverable.tasks.length) * 100)}%` }}
+            />
+          </div>
         </div>
-        <div className={`flex-1 text-sm font-medium truncate ${
-          isActive ? "text-zinc-900" : "text-zinc-700"
-        }`}>
-          {deliverable.name}
-        </div>
+      )}
+
+      {/* Status indicator */}
+      {isQueued && !isActive && (
+        <span className="mt-1 text-[10px] text-zinc-400">Ready</span>
+      )}
+      {deliverable.status === "in-progress" && !isActive && (
+        <span className="mt-1 text-[10px] text-[var(--brand)]">
+          {deliverable.tasks.filter(t => t.status === "complete").length}/{deliverable.tasks.length} steps
+        </span>
+      )}
+      {isComplete && (
+        <span className="mt-1 text-[10px] text-emerald-600">Complete</span>
+      )}
+
+      {/* Action buttons - absolute positioned */}
+      <div className="absolute top-2 right-2 flex items-center gap-1">
         {artifactPath && (
-          <button
+          <div
             onClick={handleDownload}
-            disabled={downloading}
-            className="p-1 rounded hover:bg-zinc-100 text-zinc-500 hover:text-zinc-700 transition-colors"
-            title="Download"
+            className="p-1 rounded hover:bg-zinc-100 text-zinc-400 hover:text-zinc-600 transition-colors"
           >
             {downloading ? (
-              <Loader2 className="h-4 w-4 animate-spin" />
+              <Loader2 className="h-3.5 w-3.5 animate-spin" />
             ) : (
-              <Download className="h-4 w-4" />
+              <Download className="h-3.5 w-3.5" />
             )}
-          </button>
+          </div>
+        )}
+        {!isActive && deliverable.status !== "validated" && (
+          <div
+            onClick={(e) => {
+              e.stopPropagation()
+              if (confirm(`Remove "${deliverable.name}" from queue?`)) {
+                onDelete()
+              }
+            }}
+            className="p-1 rounded hover:bg-red-50 text-zinc-400 hover:text-red-500 transition-colors"
+          >
+            <Trash2 className="h-3.5 w-3.5" />
+          </div>
         )}
       </div>
 
-      {deliverable.status === "queued" && !isActive && (
-        <div className="mt-2 pt-2 border-t border-zinc-100">
-          <span className="text-xs text-zinc-400">Click to start →</span>
-        </div>
-      )}
-    </div>
+      {/* Bottom accent bar */}
+      <div
+        className={`absolute bottom-0 left-0 right-0 h-[3px] transition-all duration-200 ${
+          isActive
+            ? "bg-[var(--brand)]"
+            : isComplete
+            ? "bg-emerald-500"
+            : "bg-transparent"
+        }`}
+      />
+    </button>
   )
 }

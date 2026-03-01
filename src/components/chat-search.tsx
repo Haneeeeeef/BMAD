@@ -60,7 +60,7 @@ export function ChatSearch({
   items,
   open,
   onOpenChange,
-  placeholder = "Search projects...",
+  placeholder = "Search workspaces...",
   emptyMessage = "No results found.",
 }: ChatSearchProps) {
   const router = useRouter()
@@ -164,17 +164,17 @@ export function ChatSearch({
               {/* New project action */}
               <button
                 onClick={handleNewProject}
-                aria-label="Create new project"
+                aria-label="Create new workspace"
                 className="flex items-center gap-3 px-5 py-4 mt-2 mb-1 w-full text-left hover:bg-muted/50 transition-colors"
               >
                 <PenSquare className="h-4 w-4 text-muted-foreground/60 shrink-0" strokeWidth={1.75} />
-                <span className="text-sm leading-none">New project</span>
+                <span className="text-sm leading-none">New workspace</span>
               </button>
 
               {/* Results list */}
               {filteredItems.length > 0 ? (
                 <div className="pb-2">
-                  <div className="px-5 py-1.5 text-xs text-muted-foreground/60">Projects</div>
+                  <div className="px-5 py-1.5 text-xs text-muted-foreground/60">Workspaces</div>
                   {filteredItems.map((item) => (
                     <SearchResultItem key={item.id} item={item} onSelect={handleSelect} />
                   ))}

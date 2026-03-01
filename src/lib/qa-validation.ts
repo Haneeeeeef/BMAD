@@ -3,13 +3,13 @@
 
 import { DeliverableType, ValidationResult } from "./bmad-types"
 
-// Validation criteria per deliverable type
-export const QA_CRITERIA: Record<DeliverableType, Array<{
+// Validation criteria per deliverable type (Partial - not all types have QA yet)
+export const QA_CRITERIA: Partial<Record<DeliverableType, Array<{
   id: string
   check: string
   description: string
   required: boolean
-}>> = {
+}>>> = {
   "product-brief": [
     { id: "vision", check: "Vision clearly defined", description: "Document has a clear, compelling vision statement", required: true },
     { id: "problem", check: "Problem statement specific", description: "Problem is well-articulated with evidence", required: true },
@@ -25,7 +25,7 @@ export const QA_CRITERIA: Record<DeliverableType, Array<{
     { id: "dependencies", check: "Dependencies identified", description: "Technical and business dependencies listed", required: false },
     { id: "risks", check: "Risks documented", description: "Known risks and mitigations included", required: false },
   ],
-  "ux-sitemap": [
+  "ux-design": [
     { id: "hierarchy", check: "Information hierarchy clear", description: "Page structure is logical and navigable", required: true },
     { id: "flows", check: "User flows documented", description: "Key user journeys are mapped", required: true },
     { id: "states", check: "Page states covered", description: "Empty, loading, error states considered", required: false },
@@ -38,13 +38,13 @@ export const QA_CRITERIA: Record<DeliverableType, Array<{
     { id: "security", check: "Security addressed", description: "Auth, encryption, data protection covered", required: true },
     { id: "scalability", check: "Scalability considered", description: "Performance and scaling approach noted", required: false },
   ],
-  "user-stories": [
+  "epics-stories": [
     { id: "format", check: "Story format correct", description: "Stories use standard format", required: true },
     { id: "acceptance", check: "Acceptance criteria present", description: "Each story has testable criteria", required: true },
     { id: "estimation", check: "Stories estimated", description: "Story points or T-shirt sizes assigned", required: false },
     { id: "epics", check: "Grouped into epics", description: "Stories organized under epics", required: false },
   ],
-  "sprint-plan": [
+  "sprint-planning": [
     { id: "goal", check: "Sprint goal defined", description: "Clear sprint objective stated", required: true },
     { id: "capacity", check: "Capacity calculated", description: "Team capacity considered", required: true },
     { id: "tasks", check: "Tasks broken down", description: "Stories broken into tasks", required: true },
@@ -57,8 +57,10 @@ export function buildQASpawnInstruction(
   deliverableType: DeliverableType,
   documentPath: string,
   projectName: string
-): string {
+): string | null {
   const criteria = QA_CRITERIA[deliverableType]
+  if (!criteria) return null // No QA criteria for this type yet
+
   const criteriaList = criteria
     .map((c, i) => `${i + 1}. ${c.check} ${c.required ? "(REQUIRED)" : "(OPTIONAL)"}: ${c.description}`)
     .join("\n")
@@ -166,8 +168,10 @@ export function parseValidationResults(response: string): {
 export function buildQAValidationMessage(
   deliverableType: DeliverableType,
   documentPath: string
-): string {
+): string | null {
   const criteria = QA_CRITERIA[deliverableType]
+  if (!criteria) return null // No QA criteria for this type yet
+
   const checkList = criteria.map(c => `- ${c.check}`).join("\n")
 
   return `VALIDATE DOCUMENT: ${documentPath}

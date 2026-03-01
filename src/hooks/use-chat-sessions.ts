@@ -2,13 +2,14 @@
 
 import { useState, useEffect, useCallback } from "react"
 import { ChatSession, Message, generateId, generateTitle } from "@/lib/types"
+import { safeGetItem, safeSetItem } from "@/lib/safe-storage"
 
 const STORAGE_KEY = "mission-control-sessions"
 
 function loadSessions(): ChatSession[] {
   if (typeof window === "undefined") return []
   try {
-    const data = localStorage.getItem(STORAGE_KEY)
+    const data = safeGetItem(STORAGE_KEY)
     return data ? JSON.parse(data) : []
   } catch {
     return []
@@ -17,7 +18,7 @@ function loadSessions(): ChatSession[] {
 
 function saveSessions(sessions: ChatSession[]) {
   if (typeof window === "undefined") return
-  localStorage.setItem(STORAGE_KEY, JSON.stringify(sessions))
+  safeSetItem(STORAGE_KEY, JSON.stringify(sessions))
 }
 
 export function useChatSessions() {
@@ -30,11 +31,13 @@ export function useChatSessions() {
     setIsLoaded(true)
   }, [])
 
-  // Save sessions to localStorage when they change
+  // Save sessions to localStorage when they change (debounced to avoid thrashing during streaming)
   useEffect(() => {
-    if (isLoaded) {
+    if (!isLoaded) return
+    const timeoutId = setTimeout(() => {
       saveSessions(sessions)
-    }
+    }, 500) // 500ms debounce
+    return () => clearTimeout(timeoutId)
   }, [sessions, isLoaded])
 
   const createSession = useCallback((firstMessage: string): ChatSession => {

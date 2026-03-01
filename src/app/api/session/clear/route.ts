@@ -1,6 +1,8 @@
 // Session clear endpoint - triggers memory flush then optionally clears session
 export const runtime = "edge"
 
+import { requireAuth } from "@/lib/auth"
+
 // Extract username from user token (format: mc_username_hash)
 function extractUsername(userToken: string | undefined): string | null {
   if (!userToken) return null
@@ -40,6 +42,9 @@ Keep each update concise. Reply "FLUSHED" when done.`
 }
 
 export async function POST(request: Request) {
+  const auth = requireAuth(request)
+  if (auth instanceof Response) return auth
+
   const openclawUrl = process.env.OPENCLAW_URL
   const openclawToken = process.env.OPENCLAW_TOKEN
   const sessionClearUrl = process.env.SESSION_CLEAR_URL

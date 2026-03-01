@@ -1,7 +1,7 @@
 "use client"
 
 import * as React from "react"
-import { createContext, useContext, useState, useCallback } from "react"
+import { createContext, useContext, useState, useCallback, useMemo } from "react"
 import { Sidebar } from "@/components"
 import { ErrorBoundary } from "./error-boundary"
 
@@ -49,8 +49,13 @@ export function AppShell({ children, hideSidebar = false }: AppShellProps) {
     return () => window.removeEventListener("keydown", handleKeyDown)
   }, [toggleSidebar])
 
+  const sidebarValue = useMemo(
+    () => ({ isOpen: sidebarOpen, toggle: toggleSidebar }),
+    [sidebarOpen, toggleSidebar]
+  )
+
   return (
-    <SidebarContext.Provider value={{ isOpen: sidebarOpen, toggle: toggleSidebar }}>
+    <SidebarContext.Provider value={sidebarValue}>
       <div className="flex h-screen">
         {!hideSidebar && (
           <ErrorBoundary>
@@ -58,7 +63,7 @@ export function AppShell({ children, hideSidebar = false }: AppShellProps) {
           </ErrorBoundary>
         )}
 
-        <main className="flex-1 overflow-auto" role="main">
+        <main id="main-content" className="flex-1 overflow-auto" role="main">
           <ErrorBoundary>{children}</ErrorBoundary>
         </main>
       </div>

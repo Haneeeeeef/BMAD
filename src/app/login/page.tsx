@@ -1,6 +1,7 @@
 "use client"
 
 import { useState } from "react"
+import { safeSetItem } from "@/lib/safe-storage"
 import Link from "next/link"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
@@ -32,7 +33,7 @@ export default function LoginPage() {
       const data = await response.json()
 
       if (data.success) {
-        localStorage.setItem("mc_user", JSON.stringify({
+        safeSetItem("mc_user", JSON.stringify({
           username: data.username,
           token: data.token,
           createdAt: Date.now(),
@@ -50,7 +51,7 @@ export default function LoginPage() {
   }
 
   return (
-    <div className="min-h-screen flex flex-col bg-background">
+    <main className="min-h-screen flex flex-col bg-background">
       {/* Back to landing */}
       <div className="p-4">
         <Link
@@ -81,10 +82,13 @@ export default function LoginPage() {
                   onChange={(e) => setUsername(e.target.value)}
                   disabled={isLoading}
                   autoFocus
+                  required
+                  aria-required="true"
+                  aria-describedby={error ? "login-error" : undefined}
                 />
               </div>
               {error && (
-                <p className="text-sm text-destructive">{error}</p>
+                <p id="login-error" className="text-sm text-destructive" role="alert">{error}</p>
               )}
               <Button type="submit" className="w-full" disabled={isLoading}>
                 {isLoading ? "Signing in..." : "Continue"}
@@ -93,6 +97,6 @@ export default function LoginPage() {
           </CardContent>
         </Card>
       </div>
-    </div>
+    </main>
   )
 }

@@ -1,9 +1,13 @@
 import { NextRequest, NextResponse } from "next/server"
+import { requireAuth } from "@/lib/auth"
 
 const OPENCLAW_URL = process.env.OPENCLAW_URL || "http://178.156.216.77"
 
 // GET /api/context?type=project-context|memory|memory-learnings|workflow-transcript&project=bmad-workflow-for-ai&workflow=create-product-brief
 export async function GET(request: NextRequest) {
+  const auth = requireAuth(request)
+  if (auth instanceof Response) return auth
+
   const url = new URL(request.url)
   const type = url.searchParams.get("type") || "project-context"
   const project = url.searchParams.get("project")

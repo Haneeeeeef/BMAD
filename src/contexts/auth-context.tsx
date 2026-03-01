@@ -1,7 +1,8 @@
 "use client"
 
-import { createContext, useContext, useEffect, useState, ReactNode } from "react"
+import { createContext, useContext, useEffect, useState, useMemo, useCallback, ReactNode } from "react"
 import { useRouter, usePathname } from "next/navigation"
+import { safeGetItem, safeRemoveItem } from "@/lib/safe-storage"
 
 interface User {
   username: string
@@ -33,13 +34,13 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
   useEffect(() => {
     // Check for stored user
-    const stored = localStorage.getItem("mc_user")
+    const stored = safeGetItem("mc_user")
     if (stored) {
       try {
         const parsed = JSON.parse(stored)
         setUser(parsed)
       } catch {
-        localStorage.removeItem("mc_user")
+        safeRemoveItem("mc_user")
       }
     }
     setIsLoading(false)
@@ -54,11 +55,13 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     }
   }, [user, isLoading, pathname, router])
 
-  const logout = () => {
-    localStorage.removeItem("mc_user")
+  const logout = useCallback(() => {
+    safeRemoveItem("mc_user")
     setUser(null)
     router.push("/login")
-  }
+  }, [router])
+
+  const value = useMemo(() => ({ user, isLoading, logout }), [user, isLoading, logout])
 
   // Show nothing while checking auth (prevents flash)
   if (isLoading) {
@@ -73,7 +76,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   }
 
   return (
-    <AuthContext.Provider value={{ user, isLoading, logout }}>
+    <AuthContext.Provider value={value}>
       {children}
     </AuthContext.Provider>
   )

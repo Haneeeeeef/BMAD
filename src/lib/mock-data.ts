@@ -1,17 +1,5 @@
 import { Status } from "@/components/status-badge"
-
-export interface Project {
-  id: string
-  code: string
-  name: string
-  client: string
-  description: string
-  status: Status
-  currentStage: string
-  progress: number
-  agentCount: number
-  createdAt: string
-}
+import type { Project } from "@/lib/projects-storage"
 
 export interface Stage {
   id: string

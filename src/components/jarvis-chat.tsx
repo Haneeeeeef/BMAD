@@ -7,6 +7,7 @@ import ReactMarkdown from "react-markdown"
 import remarkGfm from "remark-gfm"
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip"
 import { toast } from "sonner"
+import { authHeaders } from "@/lib/safe-storage"
 
 interface Message {
   id: string
@@ -74,7 +75,9 @@ export function JarvisChat({
   // Fetch context status
   const fetchStatus = React.useCallback(async () => {
     try {
-      const res = await fetch(`/api/session/status?sessionId=${chatSessionId}`)
+      const res = await fetch(`/api/session/status?sessionId=${chatSessionId}`, {
+        headers: authHeaders(),
+      })
       if (res.ok) {
         const data = await res.json()
         setStatus(data)
@@ -104,7 +107,7 @@ export function JarvisChat({
     try {
       const res = await fetch("/api/chat", {
         method: "POST",
-        headers: { "Content-Type": "application/json" },
+        headers: authHeaders({ "Content-Type": "application/json" }),
         body: JSON.stringify({
           messages: [...messages, userMessage].map(m => ({ role: m.role, content: m.content })),
           sessionId: chatSessionId,
@@ -163,7 +166,7 @@ export function JarvisChat({
     try {
       const res = await fetch("/api/session/clear", {
         method: "POST",
-        headers: { "Content-Type": "application/json" },
+        headers: authHeaders({ "Content-Type": "application/json" }),
         body: JSON.stringify({ action: "flush", sessionId: chatSessionId }),
       })
       if (res.ok) {
@@ -336,6 +339,7 @@ export function JarvisChat({
                 value={input}
                 onChange={(e) => setInput(e.target.value)}
                 placeholder="Ask Jarvis..."
+                aria-label="Message Jarvis"
                 className={cn(
                   "flex-1 px-3 py-2 text-sm rounded-lg",
                   "bg-muted border-0 focus:ring-2 focus:ring-primary/20 focus:outline-none",

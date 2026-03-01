@@ -1,20 +1,13 @@
+import { Attachment } from "@/lib/types"
+import { parseChatGPTExport } from "@/lib/attachments"
+import { requireAuth } from "@/lib/auth"
+
 // Using Node.js runtime instead of Edge because Edge doesn't allow direct IP access
 // and our VPS (OpenClaw) doesn't have a domain configured yet
 export const runtime = "nodejs"
 
-type AttachmentType = "image" | "file" | "audio" | "chatgpt-export"
-
-interface Attachment {
-  id: string
-  type: AttachmentType
-  name: string
-  mimeType: string
-  size: number
-  data: string
-  transcription?: string
-}
-
-interface Message {
+// Extended message type for API use - includes "system" role beyond the client-side Message type
+interface ApiMessage {
   role: "user" | "assistant" | "system"
   content: string
   attachments?: Attachment[]
@@ -34,50 +27,17 @@ interface VisionMessage {
 }
 
 interface ChatRequest {
-  messages: Message[]
+  messages: ApiMessage[]
   sessionId?: string  // Mission Control chat session ID (used as unique token)
+  agentId?: string    // Target agent ID (e.g. "analyst", "architect") — defaults to "jarvis"
   canvasStatus?: string
   userToken?: string  // User token for per-user session isolation
+  systemMessage?: string  // Workflow context injected by orchestration (hidden from user)
 }
 
-// Parse ChatGPT export JSON to readable text
-function parseChatGPTExport(jsonContent: string): string {
-  try {
-    const data = JSON.parse(jsonContent)
-    if (Array.isArray(data)) {
-      const messages: string[] = []
-      for (const convo of data) {
-        if (convo.title) messages.push(`## ${convo.title}\n`)
-        if (convo.mapping) {
-          const sorted = Object.values(convo.mapping)
-            .filter((m: unknown) => {
-              const msg = m as { message?: { content?: { parts?: string[] } } }
-              return msg.message?.content?.parts?.length
-            })
-            .sort((a: unknown, b: unknown) => {
-              const A = a as { message?: { create_time?: number } }
-              const B = b as { message?: { create_time?: number } }
-              return (A.message?.create_time || 0) - (B.message?.create_time || 0)
-            })
-          for (const m of sorted) {
-            const msg = m as { message?: { content?: { parts?: string[] }; author?: { role?: string } } }
-            const role = msg.message?.author?.role === "assistant" ? "Assistant" : "User"
-            const content = msg.message?.content?.parts?.join("\n") || ""
-            if (content.trim()) messages.push(`**${role}:** ${content}\n`)
-          }
-        }
-      }
-      return messages.join("\n")
-    }
-    return "Could not parse ChatGPT export"
-  } catch {
-    return "Invalid JSON format"
-  }
-}
-
-// Transform messages with attachments to OpenAI vision format
+// Transform messages with attachments — images sent as native image_url content parts to OpenClaw
 async function transformMessages(
-  messages: Message[],
+  messages: ApiMessage[],
   openclawUrl: string,
   openclawToken: string
 ): Promise<VisionMessage[]> {
@@ -85,63 +45,50 @@ async function transformMessages(
 
   for (const msg of messages) {
     if (!msg.attachments?.length) {
-      // No attachments, pass through as-is
       result.push({ role: msg.role, content: msg.content })
       continue
     }
 
-    // Build content array for multimodal message (OpenAI format)
-    const contentParts: Array<
-      | { type: "text"; text: string }
-      | { type: "image_url"; image_url: { url: string } }
-    > = []
+    // Separate images from other attachments
+    const contentParts: Array<{ type: "text"; text: string } | { type: "image_url"; image_url: { url: string } }> = []
+    const textParts: string[] = []
 
-    // Process attachments
     for (const att of msg.attachments) {
       if (att.type === "image") {
-        // Add image as data URL (OpenAI format)
+        // Send image directly as vision content — OpenClaw gateway now passes these through
         contentParts.push({
           type: "image_url",
-          image_url: {
-            url: `data:${att.mimeType};base64,${att.data}`,
-          },
+          image_url: { url: `data:${att.mimeType};base64,${att.data}` },
         })
       } else if (att.type === "audio") {
-        // Transcribe audio via OpenClaw Whisper endpoint
         try {
           const transcription = await transcribeAudio(att, openclawUrl, openclawToken)
-          contentParts.push({
-            type: "text",
-            text: `[Transcription of ${att.name}]:\n${transcription}`,
-          })
+          textParts.push(`[Transcription of ${att.name}]:\n${transcription}`)
         } catch {
-          contentParts.push({
-            type: "text",
-            text: `[Failed to transcribe ${att.name}]`,
-          })
+          textParts.push(`[Failed to transcribe ${att.name}]`)
         }
       } else if (att.type === "chatgpt-export") {
-        // Parse ChatGPT export
         const parsed = parseChatGPTExport(att.data)
-        contentParts.push({
-          type: "text",
-          text: `[ChatGPT Export - ${att.name}]:\n${parsed}`,
-        })
+        textParts.push(`[ChatGPT Export - ${att.name}]:\n${parsed}`)
       } else {
-        // Text file - include content directly
-        contentParts.push({
-          type: "text",
-          text: `[File: ${att.name}]:\n${att.data}`,
-        })
+        textParts.push(`[File: ${att.name}]:\n${att.data}`)
       }
     }
 
-    // Add the user's text message
-    if (msg.content.trim()) {
-      contentParts.push({ type: "text", text: msg.content })
+    // Build text content from non-image attachments + user message
+    if (textParts.length > 0 && msg.content.trim()) {
+      textParts.push(msg.content)
     }
+    const textContent = textParts.length > 0 ? textParts.join("\n\n") : msg.content
 
-    result.push({ role: msg.role, content: contentParts })
+    if (contentParts.length > 0) {
+      // Has images — use content array format
+      contentParts.push({ type: "text", text: textContent })
+      result.push({ role: msg.role, content: contentParts })
+    } else {
+      // Text only
+      result.push({ role: msg.role, content: textContent })
+    }
   }
 
   return result
@@ -182,6 +129,9 @@ function extractUsername(userToken: string | undefined): string | null {
 }
 
 export async function POST(request: Request) {
+  const auth = requireAuth(request)
+  if (auth instanceof Response) return auth
+
   const openclawUrl = process.env.OPENCLAW_URL
   const openclawToken = process.env.OPENCLAW_TOKEN
 
@@ -193,20 +143,24 @@ export async function POST(request: Request) {
   }
 
   try {
-    const { messages, sessionId, canvasStatus, userToken }: ChatRequest = await request.json()
+    const { messages, sessionId, agentId, canvasStatus, userToken, systemMessage }: ChatRequest = await request.json()
+    const targetAgent = agentId || "jarvis"
 
     // Extract username for session isolation
     const username = extractUsername(userToken)
 
-    // Transform messages with attachments to OpenAI vision format
+    // Transform messages — images sent as native image_url content parts to OpenClaw
     const transformedMessages = await transformMessages(messages, openclawUrl, openclawToken)
 
-    // Build system context (username + canvas status only)
+    // Build system context
     // NOTE: SOUL.md, TOOLS.md, AGENTS.md, MEMORY.md are injected by OpenClaw from workspace
     const systemParts: string[] = []
 
     if (username) {
       systemParts.push(`You are chatting with ${username}.`)
+    }
+    if (systemMessage) {
+      systemParts.push(systemMessage)
     }
     if (canvasStatus) {
       systemParts.push(canvasStatus)
@@ -223,15 +177,16 @@ export async function POST(request: Request) {
       Authorization: `Bearer ${openclawToken}`,
     }
 
-    // Use agent:jarvis:mc:username:sessionId format for proper agent routing
+    // Use agent:<agentId>:mc:username:sessionId format for proper agent routing
     // OpenClaw routes sessions based on the "agent:<agentId>:" prefix
+    // Each deliverable targets its own agent (analyst, architect, pm, etc.)
     if (sessionId) {
       const sessionKey = username
-        ? `agent:jarvis:mc:${username}:${sessionId}`
-        : `agent:jarvis:mc:${sessionId}`
+        ? `agent:${targetAgent}:mc:${username}:${sessionId}`
+        : `agent:${targetAgent}:mc:${sessionId}`
       headers["x-openclaw-session-key"] = sessionKey
     } else if (username) {
-      headers["x-openclaw-session-key"] = `agent:jarvis:mc:${username}`
+      headers["x-openclaw-session-key"] = `agent:${targetAgent}:mc:${username}`
     }
 
     let response: Response
@@ -242,11 +197,9 @@ export async function POST(request: Request) {
           method: "POST",
           headers,
           body: JSON.stringify({
-            model: "openclaw:jarvis",
+            model: `openclaw:${targetAgent}`,
             messages: messagesWithContext,
             stream: true,
-            // Note: Kimi K2.5 reasoning is enabled via /think: directive in messages
-            // The reasoning_effort param is for OpenAI models, not Kimi
           }),
         }
       )
