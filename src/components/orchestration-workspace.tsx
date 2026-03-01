@@ -4,19 +4,17 @@ import React, { useState, useEffect, useRef, useCallback } from "react"
 import {
   ArrowLeft,
 
-  Brain,
   Trash2,
   RefreshCw,
   Loader2,
-  BookOpen,
 } from "lucide-react"
 import Link from "next/link"
 import { safeGetItem, safeSetItem, safeRemoveItem, authHeaders } from "@/lib/safe-storage"
 import { ConfirmDialog } from "@/components/confirm-dialog"
 import { Tooltip, TooltipContent, TooltipTrigger, TooltipProvider } from "@/components/ui/tooltip"
-import { Agent, ActivityEntry } from "@/components/agent-panel"
+import { Agent } from "@/components/agent-panel"
+import type { ToolAction } from "@/components/activity-feed"
 import {
-  IconRail,
   WorkspaceSidebar,
   WorkspaceRightPanel,
   AgentDetailPanel,
@@ -26,8 +24,6 @@ import { ChatInput, type ChatAttachment, type ChatInputHandle } from "@/componen
 import { ChatMessage } from "@/components/chat-message"
 import type { DocumentItem } from "@/components/workspace"
 import { DocumentPicker } from "@/components/document-picker"
-import { ContextViewer } from "@/components/context-viewer"
-import type { ToolEvent } from "@/hooks/use-openclaw-events"
 import {
   Project,
   Deliverable,
@@ -56,6 +52,25 @@ type OrchestrationWorkspaceProps = {
 }
 
 export function OrchestrationWorkspace({ project, onProjectUpdate }: OrchestrationWorkspaceProps) {
+  // Migrate legacy deliverables that don't have per-deliverable sessionIds
+  useEffect(() => {
+    const needsMigration = project.deliverables.some(d => !d.sessionId)
+    if (needsMigration) {
+      onProjectUpdate({
+        ...project,
+        deliverables: project.deliverables.map((d, i) => {
+          if (d.sessionId) return d
+          // Current deliverable inherits the project-level sessionId (preserves VPS session)
+          if (d.id === project.currentDeliverable && project.sessionId) {
+            return { ...d, sessionId: project.sessionId }
+          }
+          return { ...d, sessionId: `session-${Date.now()}-${i}` }
+        }),
+      })
+    }
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [])
+
   const [deleteTarget, setDeleteTarget] = useState<Deliverable | null>(null)
   const [isDeleting, setIsDeleting] = useState(false)
 
@@ -78,13 +93,14 @@ export function OrchestrationWorkspace({ project, onProjectUpdate }: Orchestrati
   // Layout state
 
   // Context status
-  const [contextStatus, setContextStatus] = useState<{ percentage: number; tokens: number; maxTokens: number } | null>(null)
+  // Per-deliverable context map (deliverableId → context data)
+  // Per-agent context map (agentId → aggregated context) — derived from deliverable context
+  const [agentContextMap, setAgentContextMap] = useState<Record<string, { tokens: number; maxTokens: number; percentage: number }>>({})
   const [isClearing, setIsClearing] = useState(false)
   const [isFlushing, setIsFlushing] = useState(false)
 
   // Modals
   const [showDocPicker, setShowDocPicker] = useState(false)
-  const [showContextViewer, setShowContextViewer] = useState(false)
   const [selectedAgentId, setSelectedAgentId] = useState<string | null>(null)
   const [viewingDocument, setViewingDocument] = useState<DocumentItem | null>(null)
   const [documentContent, setDocumentContent] = useState<string>("")
@@ -106,98 +122,16 @@ export function OrchestrationWorkspace({ project, onProjectUpdate }: Orchestrati
     ]
   })
 
-  // Activity log - with migration from old format
-  const [activityLog, setActivityLog] = useState<ActivityEntry[]>(() => {
-    if (typeof window !== "undefined") {
-      const stored = safeGetItem(`project-activity-${project.id}`)
-      if (stored) {
-        try {
-          const entries = JSON.parse(stored)
-          // Migrate old type format to new format
-          const typeMap: Record<string, ActivityEntry["type"]> = {
-            "user-action": "user:input",
-            "task-start": "task:start",
-            "task-complete": "task:complete",
-            "agent-spawn": "agent:spawn",
-            "agent-complete": "agent:complete",
-            "agent-error": "agent:error",
-          }
-          return entries.map((e: ActivityEntry & { from?: string }) => ({
-            ...e,
-            type: typeMap[e.type] || e.type,
-            agent: e.agent || e.from, // old format used "from"
-          }))
-        } catch { return [] }
-      }
-    }
-    return []
-  })
+  // Real tool actions from OpenClaw session history polling
+  const [toolActions, setToolActions] = useState<ToolAction[]>([])
+
+  // Flag: session was just rotated, next message should include transcript context
+  const needsReorientation = useRef(false)
 
   // Documents state (derived from deliverable output artifacts)
   const [documents, setDocuments] = useState<DocumentItem[]>([])
 
-  // Tool execution state (populated from chat response parsing)
-  const [activeTools, setActiveTools] = useState<ToolEvent[]>([])
-  const [completedTools, setCompletedTools] = useState<ToolEvent[]>([])
 
-  // Parse tool calls from streaming response
-  const parseToolsFromChunk = useCallback((chunk: string) => {
-    // Detect tool call patterns in the response
-    const toolPatterns = [
-      { pattern: /\[Calling tool: (\w+)\]/i, phase: "start" as const },
-      { pattern: /\[Tool (\w+) completed\]/i, phase: "end" as const },
-      { pattern: /\[Running: ([^\]]+)\]/i, phase: "start" as const },
-      { pattern: /```bash\n([^`]+)```/i, phase: "end" as const, tool: "bash" },
-      { pattern: /Reading file[:\s]+([^\n]+)/i, phase: "end" as const, tool: "read" },
-      { pattern: /Writing to[:\s]+([^\n]+)/i, phase: "end" as const, tool: "write" },
-      { pattern: /Searching[:\s]+([^\n]+)/i, phase: "start" as const, tool: "search" },
-    ]
-
-    for (const { pattern, phase, tool } of toolPatterns) {
-      const match = chunk.match(pattern)
-      if (match) {
-        const toolName = tool || match[1] || "unknown"
-        const timestamp = Date.now()
-        const toolEvent: ToolEvent = {
-          id: `tool-${timestamp}-${Math.random().toString(36).slice(2, 8)}`,
-          stream: "tool",
-          phase,
-          tool: toolName,
-          params: match[1] ? { command: match[1] } : undefined,
-          timestamp,
-        }
-
-        if (phase === "start") {
-          setActiveTools(prev => [...prev, toolEvent])
-        } else {
-          setActiveTools(prev => prev.filter(t => t.tool !== toolName))
-          setCompletedTools(prev => [...prev, toolEvent].slice(-20))
-        }
-      }
-    }
-  }, [])
-
-  // Add activity entry helper - uses new ActivityType format
-  const addActivity = useCallback((
-    type: ActivityEntry["type"],
-    content: string,
-    options?: { agent?: string; target?: string; metadata?: ActivityEntry["metadata"] }
-  ) => {
-    const newEntry: ActivityEntry = {
-      id: generateId(),
-      timestamp: Date.now(),
-      type,
-      content,
-      agent: options?.agent,
-      target: options?.target,
-      metadata: options?.metadata,
-    }
-    setActivityLog(prev => {
-      const updated = [newEntry, ...prev].slice(0, 100) // Keep last 100
-      safeSetItem(`project-activity-${project.id}`, JSON.stringify(updated))
-      return updated
-    })
-  }, [project.id])
 
   // Delete a deliverable (VPS cleanup + notify responsible agent + localStorage)
   const handleDeleteDeliverable = useCallback(async () => {
@@ -217,10 +151,8 @@ export function OrchestrationWorkspace({ project, onProjectUpdate }: Orchestrati
       }).catch(() => {})
 
       // 2. Ask the responsible agent to update PROJECT-CONTEXT.md / PROJECT-DECISIONS.md
-      if (project.sessionId) {
-        addActivity("agent:spawn", `Asked ${agentName} to update project context after removing "${deleteTarget.name}"`, { agent: agentName })
-
-        fetch("/api/chat", {
+      if (deleteTarget.sessionId) {
+          fetch("/api/chat", {
           method: "POST",
           headers: authHeaders({ "Content-Type": "application/json" }),
           body: JSON.stringify({
@@ -228,20 +160,14 @@ export function OrchestrationWorkspace({ project, onProjectUpdate }: Orchestrati
               role: "user",
               content: `The deliverable "${deleteTarget.name}" (type: ${deleteTarget.type}) has been removed from this project. Its artifact and transcript files have been deleted. Please update PROJECT-CONTEXT.md and PROJECT-DECISIONS.md to remove references to this deliverable and its outputs. Be brief.`,
             }],
-            sessionId: project.sessionId,
+            sessionId: deleteTarget.sessionId,
             agentId: workflow?.agent || "jarvis",
           }),
         })
           .then(res => {
-            if (res.ok) {
-              addActivity("agent:complete", `${agentName} updated project context — removed references to "${deleteTarget.name}"`, { agent: agentName, target: "@user" })
-            } else {
-              addActivity("agent:error", `${agentName} failed to update project context`, { agent: agentName, target: "@user" })
-            }
+            // Agent context update completed (success/failure visible in session history)
           })
-          .catch(() => {
-            addActivity("agent:error", `Could not reach ${agentName} to update project context`, { agent: agentName, target: "@user" })
-          })
+          .catch(() => {})
       }
 
       // 3. Clean up chat storage for this deliverable
@@ -268,14 +194,13 @@ export function OrchestrationWorkspace({ project, onProjectUpdate }: Orchestrati
         workflowStarted.current = false
       }
 
-      addActivity("user:input", `Removed deliverable: ${deleteTarget.name}`)
       setDeleteTarget(null)
     } catch {
       // silent
     } finally {
       setIsDeleting(false)
     }
-  }, [deleteTarget, project, onProjectUpdate, addActivity])
+  }, [deleteTarget, project, onProjectUpdate])
 
   // Advance workflow steps: mark current active → complete, next pending → active
   const advanceWorkflowStep = useCallback(() => {
@@ -334,38 +259,8 @@ export function OrchestrationWorkspace({ project, onProjectUpdate }: Orchestrati
     })
   }, [project, onProjectUpdate])
 
-  // Parse AI response for tool calls and actions
-  const parseToolCallsFromResponse = useCallback((content: string) => {
-    // Agent delegation via sessions_send patterns
-    if (/sessions_send|delegat(?:e|ing|ed)|sending to|messaging/i.test(content)) {
-      const match = content.match(/(?:delegat(?:e|ing|ed) to|sessions_send.*?|sending to|messaging)\s+["`']?(\w+)["`']?/i)
-      if (match) {
-        addActivity("agent:delegate", `Delegated to ${match[1]}`, { agent: "Jarvis" })
-      }
-    }
-
-    // File write patterns (saved, wrote, created file)
-    const fileWriteMatch = content.match(/(?:saved?|wrote?|created?|updated?)\s+(?:to\s+)?[`"']?([^\s`"']+\.\w+)[`"']?/i)
-    if (fileWriteMatch) {
-      addActivity("tool:file_write", `Saved file`, { agent: "Jarvis", target: fileWriteMatch[1] })
-    }
-
-    // File read patterns
-    const fileReadMatch = content.match(/(?:reading?|loaded?|opened?|analyzed?)\s+(?:file\s+)?[`"']?([^\s`"']+\.\w+)[`"']?/i)
-    if (fileReadMatch) {
-      addActivity("tool:file_read", `Read file`, { agent: "Jarvis", target: fileReadMatch[1] })
-    }
-
-    // Search/investigation patterns
-    if (/(?:searching|investigating|looking|exploring|scanning)/i.test(content)) {
-      addActivity("tool:search", "Investigating codebase", { agent: "Jarvis" })
-    }
-
-    // Memory operations
-    if (/(?:memory|context|stored|remembered|recalled)/i.test(content)) {
-      addActivity("tool:memory", "Memory operation", { agent: "Jarvis" })
-    }
-
+  // Detect workflow progress from AI response text (advances step timeline)
+  const detectWorkflowProgress = useCallback((content: string) => {
     // Task/section completion patterns — advance the workflow step timeline
     const completionPatterns = [
       /✅.*complete/i,
@@ -382,15 +277,8 @@ export function OrchestrationWorkspace({ project, onProjectUpdate }: Orchestrati
     for (const pattern of completionPatterns) {
       if (pattern.test(content)) {
         advanceWorkflowStep()
-        addActivity("task:complete", "Section completed", { agent: "Jarvis" })
         break
       }
-    }
-
-    // Agent handoff / delegation patterns
-    if (/(?:handing off|transferring|passing to|taking over)/i.test(content)) {
-      const match = content.match(/(?:to|for|by)\s+(\w+)/i)
-      addActivity("agent:handoff", `Handoff to ${match?.[1] || "agent"}`, { agent: "Jarvis" })
     }
 
     // Workflow / deliverable completion — mark current deliverable as done
@@ -405,38 +293,81 @@ export function OrchestrationWorkspace({ project, onProjectUpdate }: Orchestrati
     for (const pattern of workflowDonePatterns) {
       if (pattern.test(content)) {
         markDeliverableComplete()
-        addActivity("agent:complete", "Workflow completed", { agent: "Jarvis" })
         break
       }
     }
-
-    // Agent error
-    if (/(?:error|failed|couldn't|unable)/i.test(content) && /(?:agent|task|process|workflow)/i.test(content)) {
-      addActivity("agent:error", "Agent error", { agent: "Jarvis", metadata: { success: false } })
-    }
-  }, [addActivity, advanceWorkflowStep, markDeliverableComplete])
+  }, [advanceWorkflowStep, markDeliverableComplete])
 
   // Current deliverable
   const currentDeliverable = project.deliverables.find(d => d.id === project.currentDeliverable)
   const currentWorkflow = currentDeliverable ? getWorkflowById(currentDeliverable.workflowId) : null
 
-  // Fetch context status
+  // Fetch context status per deliverable using exact session keys.
+  // Each deliverable has its own session: agent:<agentId>:mc:<sessionId>
+  //
+  // LEARNING: OpenClaw visibility:"all" means every agent's sessions.json contains ALL sessions
+  // across all agents. Substring-matching sessionIds causes cross-contamination — the same session
+  // appears in analyst/, architect/, jarvis/ etc. Always use exact session key lookup
+  // (sessionKey=agent:<agentId>:mc:<sessionId>) to get the right agent's data.
   const fetchContextStatus = useCallback(async () => {
-    try {
-      const response = await fetch(`/api/session/status?sessionId=${project.sessionId}`, {
-        headers: authHeaders(),
-      })
-      if (response.ok) {
-        const data = await response.json()
-        if (data.percentage !== undefined) {
-          setContextStatus(data)
-          setAgents(prev => prev.map(a =>
-            a.id === "jarvis" ? { ...a, contextUsage: data.percentage } : a
-          ))
-        }
+    const hdrs = authHeaders()
+    const delCtx: Record<string, { tokens: number; maxTokens: number; percentage: number }> = {}
+    // Track per-agent: agentId → { totalTokens, maxTokens }
+    const agentAgg: Record<string, { totalTokens: number; maxTokens: number }> = {}
+
+    await Promise.all(
+      project.deliverables.map(async (d) => {
+        const sid = d.sessionId
+        if (!sid) return
+
+        // Look up the agent for this deliverable's workflow
+        const wf = getWorkflowById(d.workflowId)
+        const agentId = wf?.agent || "jarvis"
+
+        // Construct the exact session key (same format the chat API uses)
+        const sessionKey = `agent:${agentId}:mc:${sid}`
+
+        try {
+          const res = await fetch(
+            `/api/session/status?sessionKey=${encodeURIComponent(sessionKey)}`,
+            { headers: hdrs },
+          )
+          if (!res.ok) return
+          const data = await res.json()
+          if (data.tokens > 0) {
+            const maxTokens = data.maxTokens || 200000
+            const ctx = {
+              tokens: data.tokens,
+              maxTokens,
+              percentage: data.percentage ?? Math.round((data.tokens / maxTokens) * 100),
+            }
+            delCtx[d.id] = ctx
+
+            // Aggregate for agent — sum tokens across all deliverables for this agent
+            if (!agentAgg[agentId]) {
+              agentAgg[agentId] = { totalTokens: 0, maxTokens }
+            }
+            agentAgg[agentId].totalTokens += data.tokens
+            // Use the largest maxTokens seen (should be same per agent, but be safe)
+            if (maxTokens > agentAgg[agentId].maxTokens) {
+              agentAgg[agentId].maxTokens = maxTokens
+            }
+          }
+        } catch { /* silent */ }
+      }),
+    )
+
+    // Build agent context map from aggregation
+    const aCtx: Record<string, { tokens: number; maxTokens: number; percentage: number }> = {}
+    for (const [agentId, agg] of Object.entries(agentAgg)) {
+      aCtx[agentId] = {
+        tokens: agg.totalTokens,
+        maxTokens: agg.maxTokens,
+        percentage: Math.min(Math.round((agg.totalTokens / agg.maxTokens) * 100), 100),
       }
-    } catch { /* silent */ }
-  }, [project.sessionId])
+    }
+    setAgentContextMap(aCtx)
+  }, [project.deliverables, project.currentDeliverable])
 
   useEffect(() => {
     fetchContextStatus()
@@ -445,6 +376,44 @@ export function OrchestrationWorkspace({ project, onProjectUpdate }: Orchestrati
     }, 30000)
     return () => clearInterval(interval)
   }, [fetchContextStatus])
+
+  // Poll real tool actions from OpenClaw session history
+  useEffect(() => {
+    const sid = currentDeliverable?.sessionId
+    if (!sid) return
+
+    // Build session key matching chat route format: agent:<agentId>:mc:<sessionId>
+    const activeWorkflow = currentDeliverable ? getWorkflowById(currentDeliverable.workflowId) : null
+    const agentId = activeWorkflow?.agent || "jarvis"
+    const sessionKey = `agent:${agentId}:mc:${sid}`
+
+    let cancelled = false
+
+    const poll = async () => {
+      if (cancelled || document.hidden) return
+      try {
+        const res = await fetch(
+          `/api/session/history?sessionKey=${encodeURIComponent(sessionKey)}`,
+          { headers: authHeaders() },
+        )
+        if (res.ok) {
+          const data = await res.json()
+          if (data.actions && !cancelled) {
+            setToolActions(data.actions)
+          }
+        }
+      } catch { /* silent */ }
+    }
+
+    // Initial fetch + poll every 5s
+    poll()
+    const interval = setInterval(poll, 5000)
+    return () => {
+      cancelled = true
+      clearInterval(interval)
+    }
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [currentDeliverable?.sessionId, currentDeliverable?.workflowId])
 
   // Fetch project-level docs from VPS
   const [projectFiles, setProjectFiles] = useState<string[]>([])
@@ -573,53 +542,82 @@ export function OrchestrationWorkspace({ project, onProjectUpdate }: Orchestrati
   }, [messages, project.id, project.currentDeliverable])
 
   // Start workflow when deliverable becomes active
-  // Note: sendMessage and addActivity are stable callbacks but intentionally excluded
-  // to prevent re-triggering on every project change. The ref guard prevents double-fire.
+  // The ref guard prevents double-fire of the initial workflow message.
   useEffect(() => {
     if (currentDeliverable && currentWorkflow && !workflowStarted.current && messages.length === 0) {
       workflowStarted.current = true
       const systemMsg = buildWorkflowSystemMessage(currentWorkflow, project)
       const userMsg = buildWorkflowUserMessage(currentWorkflow)
       sendMessage(userMsg, true, systemMsg)
-      addActivity("task:start", `Started ${currentDeliverable.name}`, { agent: "Jarvis" })
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [currentDeliverable, currentWorkflow, messages.length])
 
-  // Flush/Clear handlers
+  // Flush: Ask agent to save state to project files (no session rotation)
   const handleFlush = useCallback(async () => {
+    if (!currentDeliverable?.sessionId) return
     setIsFlushing(true)
     try {
+      const activeWorkflow = getWorkflowById(currentDeliverable.workflowId)
+      const agentId = activeWorkflow?.agent || "jarvis"
+      const ctx = agentContextMap[agentId]
       await fetch("/api/session/clear", {
         method: "POST",
         headers: authHeaders({ "Content-Type": "application/json" }),
-        body: JSON.stringify({ action: "flush", sessionId: project.sessionId, projectName: project.name }),
+        body: JSON.stringify({
+          action: "flush",
+          sessionId: currentDeliverable.sessionId,
+          agentId,
+          projectName: project.name,
+          contextTokens: ctx?.tokens,
+          contextMaxTokens: ctx?.maxTokens,
+          contextPercentage: ctx?.percentage,
+        }),
       })
       fetchContextStatus()
-      addActivity("tool:memory", "Flushed memory to disk", { agent: "System" })
     } catch { /* silent */ }
     finally { setIsFlushing(false) }
-  }, [project.sessionId, project.name, fetchContextStatus, addActivity])
+  }, [currentDeliverable, project.name, fetchContextStatus, agentContextMap])
 
+  // Clear: Rotate only the current deliverable's session key. Don't touch other deliverables.
   const handleClear = useCallback(async () => {
-    if (!confirm("This will flush memory and clear the session. Continue?")) return
+    if (!currentDeliverable) return
+    if (!confirm("This will rotate the session for this deliverable (fresh context). Chat history stays. Continue?")) return
     setIsClearing(true)
     try {
+      const activeWorkflow = getWorkflowById(currentDeliverable.workflowId)
+
+      // 1. Signal clear (transcript already up-to-date from per-turn appending)
       await fetch("/api/session/clear", {
         method: "POST",
         headers: authHeaders({ "Content-Type": "application/json" }),
-        body: JSON.stringify({ action: "flush_and_clear", sessionId: project.sessionId, projectName: project.name }),
+        body: JSON.stringify({
+          action: "clear",
+          sessionId: currentDeliverable.sessionId,
+          agentId: activeWorkflow?.agent || "jarvis",
+          projectName: project.name,
+        }),
       })
-      setMessages([])
-      if (project.currentDeliverable) {
-        safeRemoveItem(`project-chat-${project.id}-${project.currentDeliverable}`)
-      }
-      workflowStarted.current = false
+
+      // 2. Rotate only THIS deliverable's session key
+      const newSessionId = `session-${Date.now()}`
+      onProjectUpdate({
+        ...project,
+        deliverables: project.deliverables.map(d =>
+          d.id === currentDeliverable.id ? { ...d, sessionId: newSessionId } : d
+        ),
+      })
+
+      // 3. Reset tool actions (old session's actions are stale)
+      setToolActions([])
+
+      // 4. Flag: next message should include re-orientation context
+      needsReorientation.current = true
+
       fetchContextStatus()
-      addActivity("user:input", "Cleared session")
     } catch { /* silent */ }
     finally { setIsClearing(false) }
-  }, [project.sessionId, project.name, project.currentDeliverable, project.id, fetchContextStatus, addActivity])
+  }, [project, currentDeliverable, fetchContextStatus, onProjectUpdate])
 
   // Send message
   const sendMessage = useCallback(async (content: string, isInitial = false, systemMessage?: string, attachments?: Attachment[]) => {
@@ -633,13 +631,52 @@ export function OrchestrationWorkspace({ project, onProjectUpdate }: Orchestrati
     try {
       // Route to the correct agent based on current deliverable's workflow
       const activeWorkflow = currentDeliverable ? getWorkflowById(currentDeliverable.workflowId) : null
+      const projectSlug = slugify(project.name)
+      const vpsBase = "/home/haneef/workspaces/jarvis/projects"
+
+      // Always include compact project context so the agent knows which project it's working on
+      const contextParts = systemMessage
+        ? [systemMessage]
+        : [
+            `[Mission Control] Project: ${project.name}`,
+            `Project workspace: ${vpsBase}/${projectSlug}`,
+            currentDeliverable ? `Current deliverable: ${currentDeliverable.name}` : null,
+          ].filter(Boolean) as string[]
+
+      // After session rotation, inject last transcript exchanges so agent can re-orient
+      if (needsReorientation.current && activeWorkflow) {
+        needsReorientation.current = false
+        try {
+          const transcriptRes = await fetch(
+            `/api/artifacts?project=${encodeURIComponent(projectSlug)}&path=${encodeURIComponent(`WORKFLOW-TRANSCRIPT-${activeWorkflow.id}.md`)}`,
+            { headers: authHeaders() },
+          )
+          if (transcriptRes.ok) {
+            const data = await transcriptRes.json()
+            if (data.content) {
+              // Extract last ~10 turns from the transcript
+              const turns = data.content.split(/### Turn \d+/).filter(Boolean)
+              const recentTurns = turns.slice(-10).map((t: string, i: number) =>
+                `### Turn ${turns.length - 10 + i + 1}${t}`,
+              ).join("")
+              if (recentTurns.trim()) {
+                contextParts.push(
+                  `\n[Session Re-orientation] This is a fresh session. Here are the last exchanges from the previous session for continuity:\n\n${recentTurns.trim()}`,
+                  `\nPlease read PROJECT-CONTEXT.md, PROJECT-DECISIONS.md, and MEMORY.md in the project folder to fully re-orient, then continue the workflow from where we left off.`,
+                )
+              }
+            }
+          }
+        } catch { /* silent — re-orientation is best-effort */ }
+      }
+
+      const projectContext = contextParts.join("\n")
+
       const payload: Record<string, unknown> = {
         messages: [{ role: "user", content, attachments }],
-        sessionId: project.sessionId,
+        sessionId: currentDeliverable?.sessionId || project.sessionId,
         agentId: activeWorkflow?.agent || "jarvis",
-      }
-      if (systemMessage) {
-        payload.systemMessage = systemMessage
+        systemMessage: projectContext,
       }
 
       const response = await fetch("/api/chat", {
@@ -679,7 +716,6 @@ export function OrchestrationWorkspace({ project, onProjectUpdate }: Orchestrati
         },
         onContent: (chunk, full) => {
           assistantContent = full
-          parseToolsFromChunk(chunk)
           setMessages(prev => {
             const exists = prev.find(m => m.id === assistantMsgId)
             if (exists) {
@@ -699,8 +735,22 @@ export function OrchestrationWorkspace({ project, onProjectUpdate }: Orchestrati
         },
       })
 
-      // Parse for tool calls and actions from AI response
-      parseToolCallsFromResponse(assistantContent)
+      // Detect workflow step advancement from AI response text
+      detectWorkflowProgress(assistantContent)
+
+      // Append this turn to the workflow transcript (fire-and-forget)
+      if (activeWorkflow && assistantContent && !isInitial) {
+        fetch("/api/session/transcript", {
+          method: "POST",
+          headers: authHeaders({ "Content-Type": "application/json" }),
+          body: JSON.stringify({
+            projectName: project.name,
+            workflowId: activeWorkflow.id,
+            userMessage: content,
+            assistantMessage: assistantContent,
+          }),
+        }).catch(() => { /* silent — transcript append is best-effort */ })
+      }
 
     } catch (error) {
       console.error("Chat error:", error)
@@ -713,7 +763,7 @@ export function OrchestrationWorkspace({ project, onProjectUpdate }: Orchestrati
     } finally {
       setIsLoading(false)
     }
-  }, [project, addActivity, parseToolsFromChunk, parseToolCallsFromResponse])
+  }, [project, detectWorkflowProgress])
 
   // Handle input submit (with optional file attachments)
   const handleChatSubmit = useCallback(async (chatAttachments?: ChatAttachment[]) => {
@@ -803,8 +853,7 @@ export function OrchestrationWorkspace({ project, onProjectUpdate }: Orchestrati
       a.id === "jarvis" ? { ...a, status: "active", task: deliverable?.name } : a
     ))
 
-    addActivity("user:switch", `Switched to ${deliverable?.name}`)
-  }, [project, onProjectUpdate, addActivity])
+  }, [project, onProjectUpdate])
 
   // Add deliverables
   const handleAddDeliverables = useCallback((selectedTypes: DeliverableType[]) => {
@@ -843,6 +892,7 @@ export function OrchestrationWorkspace({ project, onProjectUpdate }: Orchestrati
         status: isFirstAndAutoStart ? "in-progress" : "queued",
         progress: 0,
         tasks,
+        sessionId: `session-${Date.now()}-${index}`,
       }
     })
 
@@ -856,8 +906,7 @@ export function OrchestrationWorkspace({ project, onProjectUpdate }: Orchestrati
     })
 
     setShowDocPicker(false)
-    addActivity("user:input", `Added ${newDeliverables.length} deliverable(s)`)
-  }, [project, onProjectUpdate, addActivity])
+  }, [project, onProjectUpdate])
 
   const lastMessage = messages[messages.length - 1]
   const isStreaming = isLoading && lastMessage?.role === "assistant"
@@ -876,32 +925,6 @@ export function OrchestrationWorkspace({ project, onProjectUpdate }: Orchestrati
             </div>
 
             <div className="flex items-center gap-1.5">
-              {/* Context indicator */}
-              <Tooltip>
-                <TooltipTrigger asChild>
-                  <div className={cn(
-                    "flex items-center gap-1 px-2 py-1 rounded text-xs font-medium",
-                    !contextStatus ? "text-muted-foreground bg-muted" :
-                    contextStatus.percentage < 50 ? "text-emerald-600 bg-emerald-100" :
-                    contextStatus.percentage < 80 ? "text-amber-600 bg-amber-100" :
-                    "text-red-600 bg-red-100"
-                  )}>
-                    <Brain className="h-3 w-3" />
-                    <span>{contextStatus?.percentage ?? "—"}%</span>
-                  </div>
-                </TooltipTrigger>
-                <TooltipContent>Context: {contextStatus?.tokens?.toLocaleString() ?? "—"} tokens</TooltipContent>
-              </Tooltip>
-
-              <Tooltip>
-                <TooltipTrigger asChild>
-                  <button onClick={() => setShowContextViewer(true)} className="p-1.5 hover:bg-muted rounded-lg">
-                    <BookOpen className="h-4 w-4 text-muted-foreground" />
-                  </button>
-                </TooltipTrigger>
-                <TooltipContent>View context</TooltipContent>
-              </Tooltip>
-
               <Tooltip>
                 <TooltipTrigger asChild>
                   <button onClick={handleFlush} disabled={isFlushing} className="p-1.5 hover:bg-muted rounded-lg disabled:opacity-50">
@@ -917,7 +940,7 @@ export function OrchestrationWorkspace({ project, onProjectUpdate }: Orchestrati
                     {isClearing ? <Loader2 className="h-4 w-4 text-muted-foreground animate-spin" /> : <Trash2 className="h-4 w-4 text-muted-foreground" />}
                   </button>
                 </TooltipTrigger>
-                <TooltipContent>Clear session</TooltipContent>
+                <TooltipContent>Rotate session (fresh context)</TooltipContent>
               </Tooltip>
 
             </div>
@@ -935,13 +958,6 @@ export function OrchestrationWorkspace({ project, onProjectUpdate }: Orchestrati
         />
       )}
 
-      {/* Context Viewer Modal */}
-      <ContextViewer
-        projectName={project.name.toLowerCase().replace(/\s+/g, "-")}
-        isOpen={showContextViewer}
-        onClose={() => setShowContextViewer(false)}
-      />
-
       {/* Delete Deliverable Confirmation */}
       <ConfirmDialog
         open={!!deleteTarget}
@@ -956,17 +972,13 @@ export function OrchestrationWorkspace({ project, onProjectUpdate }: Orchestrati
 
       {/* Main Content */}
       <main className="flex-1 flex overflow-hidden relative">
-        {/* Far Left: Icon Rail */}
-        <nav aria-label="Main navigation">
-          <IconRail activeItem="workspace" />
-        </nav>
-
         {/* Left: Workspace Sidebar */}
         <WorkspaceSidebar
           deliverables={project.deliverables}
           agents={agents}
           currentDeliverableId={project.currentDeliverable}
-          activeAgentId={agents.find(a => a.status === "active")?.id ?? null}
+          activeAgentId={currentWorkflow?.agent || "jarvis"}
+          agentContextMap={agentContextMap}
           onDeliverableClick={(id) => {
             if (id !== project.currentDeliverable) {
               startDeliverable(id)
@@ -1026,7 +1038,8 @@ export function OrchestrationWorkspace({ project, onProjectUpdate }: Orchestrati
         {/* Right: Workflow Steps + Activity + Documents */}
         <WorkspaceRightPanel
           steps={currentDeliverable?.tasks ?? []}
-          activityEntries={activityLog}
+          toolActions={toolActions}
+          isPolling={isLoading}
           documents={documents}
           onViewDocument={(doc) => {
             setViewingDocument(doc)

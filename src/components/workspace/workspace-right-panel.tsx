@@ -1,14 +1,15 @@
 "use client"
 
 import type { DeliverableTask } from "@/lib/bmad-types"
-import type { ActivityEntry } from "@/components/agent-panel"
+import type { ToolAction } from "@/components/activity-feed"
 import { WorkflowSteps } from "./workflow-steps"
 import { ActivityFeed } from "@/components/activity-feed"
 import { DocumentsList, type DocumentItem } from "./documents-list"
 
 interface WorkspaceRightPanelProps {
   steps: DeliverableTask[]
-  activityEntries: ActivityEntry[]
+  toolActions: ToolAction[]
+  isPolling?: boolean
   documents: DocumentItem[]
   onViewDocument?: (doc: DocumentItem) => void
   onDownloadDocument?: (doc: DocumentItem) => void
@@ -17,7 +18,8 @@ interface WorkspaceRightPanelProps {
 
 export function WorkspaceRightPanel({
   steps,
-  activityEntries,
+  toolActions,
+  isPolling,
   documents,
   onViewDocument,
   onDownloadDocument,
@@ -28,8 +30,8 @@ export function WorkspaceRightPanel({
       {/* Workflow Steps — fixed at top */}
       <WorkflowSteps steps={steps} />
 
-      {/* Activity — fixed middle */}
-      <ActivityFeed variant="detailed" entries={activityEntries} />
+      {/* Activity — real tool calls from session history */}
+      <ActivityFeed actions={toolActions} isPolling={isPolling} />
 
       {/* Documents — fills remaining space */}
       <DocumentsList

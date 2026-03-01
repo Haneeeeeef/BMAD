@@ -1,6 +1,6 @@
 // Barrel exports for components
 export { ActivityFeed } from "./activity-feed"
-export type { Activity, ActivityFeedProps } from "./activity-feed"
+export type { ToolAction, ActivityFeedProps } from "./activity-feed"
 export { AgentAvatar } from "./agent-avatar"
 export { AgentCard } from "./agent-card"
 export { AppShell } from "./app-shell"

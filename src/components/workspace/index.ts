@@ -7,7 +7,6 @@ export { ActivityFeed } from "@/components/activity-feed"
 export { DocumentsList } from "./documents-list"
 export type { DocumentItem } from "./documents-list"
 export { StatusDot } from "./status-dot"
-export { IconRail } from "./icon-rail"
 // WorkspaceChatInput unified into @/components/chat-input (use variant="workspace")
 export type { ChatAttachment, ActiveToggles } from "@/components/chat-input"
 export { AgentDetailPanel } from "./agent-detail-panel"

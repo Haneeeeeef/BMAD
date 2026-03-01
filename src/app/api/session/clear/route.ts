@@ -1,45 +1,74 @@
-// Session clear endpoint - triggers memory flush then optionally clears session
-export const runtime = "edge"
+/**
+ * POST /api/session/clear
+ *
+ * Two actions:
+ *   "flush"  — Ask the active agent to save state to project files (PROJECT-CONTEXT.md,
+ *              PROJECT-DECISIONS.md, memory, transcript check). Session stays alive.
+ *              Auto-compaction at 40K tokens is handled by OpenClaw separately.
+ *   "clear"  — Signal session key rotation. Client rotates the key for fresh context.
+ *              Does NOT clear chat messages or reset workflow.
+ */
 
 import { requireAuth } from "@/lib/auth"
 
-// Extract username from user token (format: mc_username_hash)
-function extractUsername(userToken: string | undefined): string | null {
-  if (!userToken) return null
-  const match = userToken.match(/^mc_([a-z0-9]+)_/)
-  return match ? match[1] : null
+export const runtime = "nodejs"
+
+/* ── helpers ────────────────────────────────────────────── */
+
+function slugify(name: string): string {
+  return name.toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-|-$/g, "")
 }
 
-function getFlushMessage(projectName?: string): string {
-  const today = new Date().toISOString().split('T')[0]
-  const project = projectName || '<current-project>'
+function getFlushPrompt(projectSlug: string, contextInfo?: string): string {
+  return `MEMORY FLUSH TRIGGERED. Do these in order:
 
-  return `SESSION ENDING - FLUSH REQUIRED.
+1. FIRST: Update PROJECT-CONTEXT.md in /home/haneef/workspaces/jarvis/projects/${projectSlug}:
 
-Update these files NOW:
+   a) Update "Current Status" table (phase, deliverable, progress, date)
 
-1. core/ACTIVE.md
-   - Update current project, mode, phase
-   - Brief context for next session
+   b) Update "Last Action & Next Step":
+      - Last Action Taken: What you just did
+      - User Last Said: Quote their last response
+      - Next Expected Action: What to do on resume
+      - Blocked By: Any blockers
 
-2. projects/${project}/handoff.md
-   - What was accomplished this session
-   - Open threads and blockers
-   - Next steps
+   c) Update "Key Decisions Made (With Reasoning)":
+      - Add any NEW decisions with WHY they were made
 
-3. projects/${project}/state.yaml
-   - Update progress section (brief, requirements, architecture status)
-   - Update any blockers or metrics
+   d) Update "Gathered Information (For Document Building)":
+      - Add any NEW info user provided (vision, problem, users, etc.)
+      - This is CRITICAL for document continuity after compaction
 
-4. projects/${project}/tasks.md (if tasks changed)
-   - Move completed tasks to Completed section
-   - Add any new tasks discovered
+   e) Update "Active Tasks" checklist
 
-5. memory/daily/${today}.md (optional - only if cross-project insights)
-   - Key learnings that apply beyond this project
+   f) Update "Last flush" timestamp
 
-Keep each update concise. Reply "FLUSHED" when done.`
+2. Update PROJECT-DECISIONS.md — Add any new decisions made this session with rationale and status.
+
+3. CHECK WORKFLOW TRANSCRIPT: If a WORKFLOW-TRANSCRIPT-*.md file exists:
+   - Verify all recent user responses are captured in it
+   - If any are missing, append them now
+   - The transcript is the source of truth for document creation
+
+4. Write session summary to /home/haneef/workspaces/jarvis/projects/${projectSlug}/memory/YYYY-MM-DD.md
+   - ALWAYS create this file (mkdir -p the memory folder if needed).
+   - Brief log of what happened this session.
+   - Never skip this step.
+
+5. Update /home/haneef/workspaces/jarvis/projects/${projectSlug}/MEMORY.md with accumulated insights:
+   - Key decisions and reasoning
+   - Lessons learned
+   - Patterns discovered
+   - This is cross-session knowledge for THIS PROJECT, not a session log.
+
+${contextInfo ? `\nContext usage at time of flush: ${contextInfo}\nInclude this in your memory/session summary.\n` : ""}
+IMPORTANT: After compaction, you MUST read both PROJECT-CONTEXT.md and
+WORKFLOW-TRANSCRIPT-*.md to continue where you left off.
+
+Reply "DONE" when finished.`
 }
+
+/* ── route handler ──────────────────────────────────────── */
 
 export async function POST(request: Request) {
   const auth = requireAuth(request)
@@ -47,101 +76,82 @@ export async function POST(request: Request) {
 
   const openclawUrl = process.env.OPENCLAW_URL
   const openclawToken = process.env.OPENCLAW_TOKEN
-  const sessionClearUrl = process.env.SESSION_CLEAR_URL
 
   if (!openclawUrl || !openclawToken) {
-    return new Response(JSON.stringify({ error: "OpenClaw not configured" }), {
-      status: 500,
-      headers: { "Content-Type": "application/json" },
-    })
+    return Response.json({ error: "OpenClaw not configured" }, { status: 500 })
   }
 
   try {
     const body = await request.json().catch(() => ({}))
-    const action = body.action || "flush" // "flush" or "flush_and_clear"
-    const sessionId = body.sessionId // Mission Control session ID
-    const userToken = body.userToken // User token for per-user isolation
-    const projectName = body.projectName // Current project name for flush paths
+    const action: string = body.action || "flush" // "flush" or "clear"
+    const sessionId: string | undefined = body.sessionId
+    const agentId: string | undefined = body.agentId // Active agent (analyst, architect, etc.)
+    const projectName: string | undefined = body.projectName
 
-    if (action === "status") {
-      return new Response(
-        JSON.stringify({ success: true, message: "Session active" }),
-        { status: 200, headers: { "Content-Type": "application/json" } }
-      )
+    if (!sessionId) {
+      return Response.json({ error: "sessionId required" }, { status: 400 })
     }
 
-    // Extract username for session isolation
-    const username = extractUsername(userToken)
+    const targetAgent = agentId || "jarvis"
+    const projectSlug = projectName ? slugify(projectName) : ""
+    const sessionKey = `agent:${targetAgent}:mc:${sessionId}`
 
-    // Build headers with session key for user isolation
-    const headers: Record<string, string> = {
-      "Content-Type": "application/json",
-      Authorization: `Bearer ${openclawToken}`,
-    }
+    // Real context stats from session-status API (passed by client)
+    const contextTokens: number | undefined = body.contextTokens
+    const contextMaxTokens: number | undefined = body.contextMaxTokens
+    const contextPercentage: number | undefined = body.contextPercentage
+    const contextInfo = contextTokens != null && contextMaxTokens != null
+      ? `${contextTokens.toLocaleString()} / ${contextMaxTokens.toLocaleString()} tokens (${contextPercentage ?? Math.round((contextTokens / contextMaxTokens) * 100)}%)`
+      : undefined
 
-    // Use agent:jarvis:mc: prefix for proper agent session routing
-    if (sessionId) {
-      const sessionKey = username
-        ? `agent:jarvis:mc:${username}:${sessionId}`
-        : `agent:jarvis:mc:${sessionId}`
-      headers["x-openclaw-session-key"] = sessionKey
-    } else if (username) {
-      headers["x-openclaw-session-key"] = `agent:jarvis:mc:${username}`
-    }
+    // ── FLUSH ──────────────────────────────────────────
+    if (action === "flush") {
+      const results: Record<string, unknown> = {}
 
-    // Send flush message to Jarvis (non-streaming for simplicity)
-    const flushResponse = await fetch(`${openclawUrl}/v1/chat/completions`, {
-      method: "POST",
-      headers,
-      body: JSON.stringify({
-        model: "openclaw:jarvis",
-        messages: [{ role: "user", content: getFlushMessage(projectName) }],
-        stream: false,
-        max_tokens: 1000, // More tokens for multiple file updates
-      }),
-    })
+      // Ask agent to save state to project files (session stays alive)
+      if (projectSlug) {
+        try {
+          const flushRes = await fetch(`${openclawUrl}/v1/chat/completions`, {
+            method: "POST",
+            headers: {
+              "Content-Type": "application/json",
+              Authorization: `Bearer ${openclawToken}`,
+              "x-openclaw-session-key": sessionKey,
+            },
+            body: JSON.stringify({
+              model: `openclaw:${targetAgent}`,
+              messages: [{ role: "user", content: getFlushPrompt(projectSlug, contextInfo) }],
+              stream: false,
+              max_tokens: 8000,
+            }),
+          })
 
-    if (!flushResponse.ok) {
-      const error = await flushResponse.text()
-      return new Response(
-        JSON.stringify({ success: false, error: "Flush failed", details: error }),
-        { status: 500, headers: { "Content-Type": "application/json" } }
-      )
-    }
-
-    const result = await flushResponse.json()
-    const response = result.choices?.[0]?.message?.content || "No response"
-
-    // If action is flush_and_clear, also clear the session file
-    let sessionCleared = false
-    if (action === "flush_and_clear" && sessionClearUrl && sessionId) {
-      try {
-        // Use /delete endpoint which accepts sessionId (searches within session keys)
-        const deleteUrl = sessionClearUrl.replace('/clear', '/delete')
-        const clearResponse = await fetch(deleteUrl, {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ sessionId }),
-        })
-        sessionCleared = clearResponse.ok
-      } catch {
-        // Session clear failed but flush succeeded
+          if (flushRes.ok) {
+            const flushData = await flushRes.json()
+            results.agentResponse = flushData.choices?.[0]?.message?.content || "No response"
+          } else {
+            results.agentError = `Agent flush failed: HTTP ${flushRes.status}`
+          }
+        } catch (err) {
+          results.agentError = err instanceof Error ? err.message : "Agent flush failed"
+        }
       }
+
+      return Response.json({ success: true, action: "flush", ...results })
     }
 
-    return new Response(
-      JSON.stringify({
-        success: true,
-        message: action === "flush_and_clear" ? "Memory flushed and session cleared" : "Memory flushed",
-        jarvisResponse: response,
-        sessionCleared,
-      }),
-      { status: 200, headers: { "Content-Type": "application/json" } }
-    )
-  } catch (error) {
-    return new Response(
-      JSON.stringify({ error: "Failed to process request" }),
-      { status: 500, headers: { "Content-Type": "application/json" } }
-    )
+    // ── CLEAR (rotate only, no flush) ─────────────────
+    if (action === "clear") {
+      // Transcript is already up-to-date (appended per-turn by /api/session/transcript).
+      // Session key rotation happens client-side (new sessionId in project state).
+      // The old session lingers unused on OpenClaw — no delete API needed.
+      return Response.json({ success: true, action: "clear", rotateSession: true })
+    }
+
+    return Response.json({ error: `Unknown action: ${action}` }, { status: 400 })
+
+  } catch (err) {
+    const msg = err instanceof Error ? err.message : "Unknown error"
+    return Response.json({ error: "Failed to process request", details: msg }, { status: 500 })
   }
 }

@@ -124,6 +124,7 @@ export type Deliverable = {
   status: "queued" | "in-progress" | "complete" | "validated"
   progress: number // 0-100
   tasks: DeliverableTask[]
+  sessionId?: string // Per-deliverable OpenClaw session (each has its own 200k context)
   outputPath?: string
   validationScore?: number
   validationResults?: ValidationResult[]
@@ -457,10 +458,10 @@ export const PHASE_META: Record<DeliverablePhase, { name: string; icon: string; 
 export const BMAD_AGENTS = {
   analyst: { name: "Mary", emoji: "🔍", role: "Analyst", color: "#8B5CF6" },
   pm: { name: "John", emoji: "📋", role: "Product Manager", color: "#3B82F6" },
-  "ux-designer": { name: "Sally", emoji: "🎨", role: "UX Designer", color: "#EC4899" },
+  ux: { name: "Sally", emoji: "🎨", role: "UX Designer", color: "#EC4899" },
   architect: { name: "Winston", emoji: "🏗️", role: "Architect", color: "#F59E0B" },
   dev: { name: "Amelia", emoji: "💻", role: "Developer", color: "#10B981" },
-  "scrum-master": { name: "Sam", emoji: "🎯", role: "Scrum Master", color: "#6366F1" },
+  sm: { name: "Bob", emoji: "🎯", role: "Scrum Master", color: "#6366F1" },
   qa: { name: "Quinn", emoji: "🧪", role: "QA Engineer", color: "#EF4444" },
   any: { name: "Any", emoji: "🤖", role: "Any Agent", color: "#6B7280" },
 } as const
@@ -631,7 +632,7 @@ export const BMAD_PHASES: BmadPhase[] = [
         name: "Create Prototype",
         description: "Generate visual prototypes from requirements using Pencil",
         trigger: "PT",
-        agent: "ux-designer",
+        agent: "ux",
         agentName: "Sally",
         agentEmoji: "🎨",
         stepCount: 5,
@@ -712,7 +713,7 @@ export const BMAD_PHASES: BmadPhase[] = [
         name: "Create UX Design",
         description: "User experience and interface design specifications",
         trigger: "UX",
-        agent: "ux-designer",
+        agent: "ux",
         agentName: "Sally",
         agentEmoji: "🎨",
         stepCount: 15,
@@ -844,8 +845,8 @@ export const BMAD_PHASES: BmadPhase[] = [
         name: "Sprint Planning",
         description: "Initialize sprint, select stories, set goals",
         trigger: "SP",
-        agent: "scrum-master",
-        agentName: "Sam",
+        agent: "sm",
+        agentName: "Bob",
         agentEmoji: "🎯",
         stepCount: 6,
         areas: ["Sprint goals", "Story selection", "Capacity planning", "Task breakdown", "Commitments", "Kickoff"],
@@ -916,8 +917,8 @@ export const BMAD_PHASES: BmadPhase[] = [
         name: "Correct Course",
         description: "Handle mid-sprint changes and blockers",
         trigger: "CC",
-        agent: "scrum-master",
-        agentName: "Sam",
+        agent: "sm",
+        agentName: "Bob",
         agentEmoji: "🎯",
         stepCount: 7,
         areas: ["Issue identification", "Impact analysis", "Options evaluation", "Decision making", "Scope adjustment", "Communication", "Updated plan"],
@@ -933,8 +934,8 @@ export const BMAD_PHASES: BmadPhase[] = [
         name: "Retrospective",
         description: "Sprint retro - what worked, improvements",
         trigger: "RE",
-        agent: "scrum-master",
-        agentName: "Sam",
+        agent: "sm",
+        agentName: "Bob",
         agentEmoji: "🎯",
         stepCount: 13,
         areas: ["Sprint review", "What went well", "What didn't", "Team dynamics", "Process review", "Technical debt", "Blockers analysis", "Learnings", "Action items", "Ownership", "Metrics review", "Celebrations", "Next sprint prep"],
@@ -950,8 +951,8 @@ export const BMAD_PHASES: BmadPhase[] = [
         name: "Sprint Status",
         description: "Generate sprint status and burndown",
         trigger: "SS",
-        agent: "scrum-master",
-        agentName: "Sam",
+        agent: "sm",
+        agentName: "Bob",
         agentEmoji: "🎯",
         stepCount: 8,
         areas: ["Progress summary", "Story status", "Burndown chart", "Blockers", "Risks", "Metrics", "Highlights", "Next steps"],
@@ -1222,7 +1223,7 @@ export function searchWorkflows(query: string): BmadWorkflow[] {
 // Build the command to start a workflow
 /**
  * Build the system message for workflow kickoff (hidden from user).
- * Contains project context, paths, and behavioral instructions.
+ * Minimal — just project context. Personality comes from SOUL.md.
  */
 export function buildWorkflowSystemMessage(workflow: BmadWorkflow, project: BmadProject): string {
   const projectSlug = project.name
@@ -1239,15 +1240,6 @@ export function buildWorkflowSystemMessage(workflow: BmadWorkflow, project: Bmad
     `Project: ${project.name}`,
     `Description: ${project.description}`,
     `Project workspace: ${projectRoot}`,
-    ``,
-    `Run the "${workflow.id}" workflow for project "${projectSlug}".`,
-    ``,
-    `## Communication style`,
-    `- Start with a warm, friendly greeting. Briefly let the user know you're checking the project workspace and getting set up — something like "Hey! Let me take a quick look at what we have so far..." so the user isn't left waiting in silence.`,
-    `- Then perform your initialization (load context, check for existing docs, set up files) without narrating each step. Just do it.`,
-    `- After init, jump straight into the first meaningful question or topic from the workflow.`,
-    `- Do NOT announce your role, mode, or internal architecture (no "I'm Mary, analyst mode", no "spawning subagent", no "sessions_send").`,
-    `- Be conversational and direct — like a skilled colleague starting a working session.`,
   ]
 
   if (project.context.industry) parts.push(`Industry: ${project.context.industry}`)

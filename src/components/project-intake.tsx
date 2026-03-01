@@ -3,19 +3,22 @@
 import { useState, useCallback } from "react"
 import { motion } from "framer-motion"
 import { Info } from "lucide-react"
+import { Input } from "@/components/ui/input"
 import { Textarea } from "@/components/ui/textarea"
 import { OnboardingHeader } from "@/components/ui/onboarding-header"
 import { FileUploadZone } from "@/components/file-upload-zone"
 import type { ExtractedFile } from "@/lib/file-extraction"
 
 interface ProjectIntakeProps {
-  onComplete: (data: { description: string; files: ExtractedFile[] }) => void
+  onComplete: (data: { title: string; description: string; files: ExtractedFile[] }) => void
   onBack: () => void
-  initialData?: { description: string; files: ExtractedFile[] }
+  initialData?: { title?: string; description: string; files: ExtractedFile[] }
   onDescriptionChange?: (description: string) => void
+  onTitleChange?: (title: string) => void
 }
 
-export function ProjectIntake({ onComplete, onBack, initialData, onDescriptionChange }: ProjectIntakeProps) {
+export function ProjectIntake({ onComplete, onBack, initialData, onDescriptionChange, onTitleChange }: ProjectIntakeProps) {
+  const [title, setTitle] = useState(initialData?.title || "")
   const [description, setDescription] = useState(initialData?.description || "")
   const [files, setFiles] = useState<ExtractedFile[]>(initialData?.files || [])
   const [showUpload, setShowUpload] = useState((initialData?.files?.length || 0) > 0)
@@ -29,7 +32,7 @@ export function ProjectIntake({ onComplete, onBack, initialData, onDescriptionCh
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault()
     if (isValid) {
-      onComplete({ description: description.trim(), files })
+      onComplete({ title: title.trim(), description: description.trim(), files })
     }
   }
 
@@ -49,6 +52,38 @@ export function ProjectIntake({ onComplete, onBack, initialData, onDescriptionCh
         />
 
         <div className="space-y-6">
+          {/* Title */}
+          <div>
+            <Input
+              type="text"
+              value={title}
+              onChange={(e) => {
+                setTitle(e.target.value)
+                onTitleChange?.(e.target.value)
+              }}
+              placeholder="Workspace name"
+              aria-label="Workspace name"
+              autoFocus
+              className="h-11 bg-white border-zinc-200 text-base shadow-none focus-visible:ring-0 focus-visible:border-zinc-300 placeholder:text-zinc-400"
+            />
+          </div>
+
+          {/* Description */}
+          <div>
+            <Textarea
+              value={description}
+              onChange={(e) => {
+                setDescription(e.target.value)
+                onDescriptionChange?.(e.target.value)
+              }}
+              placeholder="Describe what you're building and who it's for..."
+              aria-label="Workspace description"
+              required
+              aria-required="true"
+              className="min-h-[120px] bg-white border-zinc-200 resize-none text-base shadow-none focus-visible:ring-0 focus-visible:border-zinc-300 placeholder:text-zinc-400"
+            />
+          </div>
+
           {/* Upload Section */}
           {!showUpload ? (
             <button
@@ -90,23 +125,6 @@ export function ProjectIntake({ onComplete, onBack, initialData, onDescriptionCh
               )}
             </div>
           )}
-
-          {/* Description */}
-          <div>
-            <Textarea
-              value={description}
-              onChange={(e) => {
-                setDescription(e.target.value)
-                onDescriptionChange?.(e.target.value)
-              }}
-              placeholder="Describe what you're building and who it's for..."
-              aria-label="Workspace description"
-              required
-              aria-required="true"
-              className="min-h-[120px] bg-white border-zinc-200 resize-none text-base shadow-none focus-visible:ring-0 focus-visible:border-zinc-300"
-              autoFocus
-            />
-          </div>
         </div>
 
         {/* Inline Continue button */}

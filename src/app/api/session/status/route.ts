@@ -1,4 +1,4 @@
-export const runtime = "edge"
+export const runtime = "nodejs"
 
 import { requireAuth } from "@/lib/auth"
 
@@ -16,12 +16,15 @@ export async function GET(request: Request) {
   }
 
   try {
-    // Pass sessionId query param to VPS for per-session status
+    // Prefer exact sessionKey lookup, fall back to sessionId substring search
     const url = new URL(request.url)
+    const sessionKey = url.searchParams.get("sessionKey")
     const sessionId = url.searchParams.get("sessionId")
-    const vpsUrl = sessionId
-      ? `${sessionStatusUrl}?sessionId=${sessionId}`
-      : sessionStatusUrl
+    const vpsUrl = sessionKey
+      ? `${sessionStatusUrl}?sessionKey=${encodeURIComponent(sessionKey)}`
+      : sessionId
+        ? `${sessionStatusUrl}?sessionId=${sessionId}`
+        : sessionStatusUrl
 
     const response = await fetch(vpsUrl, {
       method: "GET",

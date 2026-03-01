@@ -12,6 +12,8 @@ export type Agent = {
   task?: string
   progress?: number
   contextUsage?: number
+  contextTokens?: number
+  contextMaxTokens?: number
   spawnedBy?: string
   startedAt?: number
 }

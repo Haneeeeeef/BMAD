@@ -1,115 +1,130 @@
 "use client"
 
-import { memo, useState } from "react"
-import { ScrollArea } from "@/components/ui/scroll-area"
-import { cn } from "@/lib/utils"
-import type { ActivityEntry } from "@/components/agent-panel"
 
 // ---------------------------------------------------------------------------
-// Simple-variant types (kept for backward-compat with callers using the
-// lightweight activity shape)
+// ToolAction — real tool call data from OpenClaw session history
 // ---------------------------------------------------------------------------
-type SimpleActivityType = "started" | "progress" | "completed" | "error" | "question" | "human"
-
-export interface Activity {
+export interface ToolAction {
   id: string
-  timestamp: string
-  agent: string
-  type: SimpleActivityType
-  message: string
+  timestamp: number
+  tool: string
+  args?: Record<string, unknown>
+  status?: string
+  durationMs?: number
 }
 
 // ---------------------------------------------------------------------------
-// Unified props
+// Human-readable descriptions for tool calls
 // ---------------------------------------------------------------------------
-export interface ActivityFeedProps {
-  /**
-   * "simple"  -- lightweight list inside a ScrollArea (original root component)
-   * "detailed" -- workspace panel with header, live indicator, elapsed timestamps
-   *
-   * @default "simple"
-   */
-  variant?: "simple" | "detailed"
+function describeToolAction(action: ToolAction): string {
+  const { tool, args } = action
 
-  /** Simple-variant data (Activity[]) */
-  activities?: Activity[]
-  /** Max height for the simple-variant ScrollArea */
-  maxHeight?: string
+  if (tool === "exec" || tool === "bash") {
+    const cmd = args?.command as string | undefined
+    if (cmd) {
+      // Show first meaningful part of command, truncated
+      const short = cmd.split("\n")[0].slice(0, 60)
+      return `Ran \`${short}${cmd.length > 60 ? "..." : ""}\``
+    }
+    return "Ran a command"
+  }
 
-  /** Detailed-variant data (ActivityEntry[]) */
-  entries?: ActivityEntry[]
-  /** Max entries to display in the detailed variant */
-  maxEntries?: number
+  if (tool === "read" || tool === "file_read") {
+    const path = (args?.path || args?.file_path || args?.file || args?.filename) as string | undefined
+    if (path) {
+      const name = path.split("/").pop()
+      return `Read **${name}**`
+    }
+    return "Read a file"
+  }
+
+  if (tool === "write" || tool === "file_write" || tool === "save") {
+    const path = (args?.path || args?.file_path || args?.file || args?.filename) as string | undefined
+    if (path) {
+      const name = path.split("/").pop()
+      return `Wrote **${name}**`
+    }
+    return "Wrote a file"
+  }
+
+  if (tool === "search" || tool === "grep" || tool === "find") {
+    const query = (args?.query || args?.pattern || args?.term) as string | undefined
+    if (query) {
+      const short = query.slice(0, 40)
+      return `Searched for "${short}${query.length > 40 ? "..." : ""}"`
+    }
+    return "Searched the codebase"
+  }
+
+  if (tool === "sessions_send" || tool === "delegate") {
+    const target = (args?.agent || args?.target || args?.sessionKey) as string | undefined
+    const succeeded = action.status === "completed"
+    if (target) {
+      // Extract agent name from session key if needed
+      const agentMatch = target.match(/^agent:(\w+)/)
+      const name = agentMatch ? agentMatch[1] : target
+      return succeeded
+        ? `Delegated to **${name}**`
+        : `Tried to delegate to **${name}**`
+    }
+    return succeeded ? "Delegated to another agent" : "Tried to delegate"
+  }
+
+  if (tool === "memory" || tool === "memory_store" || tool === "memory_flush") {
+    return "Saved to memory"
+  }
+
+  if (tool === "web" || tool === "fetch" || tool === "http") {
+    const url = (args?.url) as string | undefined
+    if (url) {
+      try {
+        const host = new URL(url).hostname
+        return `Fetched ${host}`
+      } catch {
+        return "Made a web request"
+      }
+    }
+    return "Made a web request"
+  }
+
+  // Fallback — just show the tool name in a readable way
+  const readable = tool.replace(/_/g, " ").replace(/([a-z])([A-Z])/g, "$1 $2").toLowerCase()
+  return `Used ${readable}`
+}
+
+function isDelegation(action: ToolAction): boolean {
+  return action.tool === "sessions_send" || action.tool === "delegate"
 }
 
 // ---------------------------------------------------------------------------
-// Simple-variant internals (previously in activity-item.tsx)
+// Format timestamp
 // ---------------------------------------------------------------------------
-const simpleTypeConfig: Record<SimpleActivityType, { color: string }> = {
-  started:   { color: "text-blue-500" },
-  progress:  { color: "text-muted-foreground" },
-  completed: { color: "text-green-500" },
-  error:     { color: "text-destructive" },
-  question:  { color: "text-amber-500" },
-  human:     { color: "text-violet-500" },
+function formatTime(timestamp: number): string {
+  if (!timestamp) return ""
+  const d = new Date(timestamp)
+  const h = d.getHours()
+  const m = String(d.getMinutes()).padStart(2, "0")
+  const ampm = h >= 12 ? "pm" : "am"
+  const h12 = h % 12 || 12
+  return `${h12}:${m}${ampm}`
 }
 
-const SimpleActivityItem = memo(function SimpleActivityItem({
-  timestamp,
-  agent,
-  type,
-  message,
-}: {
-  timestamp: string
-  agent: string
-  type: SimpleActivityType
-  message: string
-}) {
-  const config = simpleTypeConfig[type]
-
-  return (
-    <div className="flex gap-3 py-2">
-      <span className="text-xs text-muted-foreground w-12 shrink-0">
-        {timestamp}
-      </span>
-      <span className={cn("text-xs font-medium w-24 shrink-0 truncate", config.color)}>
-        {agent}
-      </span>
-      <span className="text-xs text-foreground">
-        {message}
-      </span>
-    </div>
-  )
-})
-
 // ---------------------------------------------------------------------------
-// Detailed-variant internals (previously in workspace/activity-feed.tsx)
+// Render bold **segments** in text
 // ---------------------------------------------------------------------------
+function ActionText({ text, failed }: { text: string; failed?: boolean }) {
+  const baseClass = failed
+    ? "text-[11px] leading-[15px] text-amber-500/70"
+    : "text-[11px] leading-[15px] text-muted-foreground"
 
-/** Format elapsed seconds as mm:ss */
-function formatElapsed(timestamp: number): string {
-  const elapsed = Math.max(0, Math.floor((Date.now() - timestamp) / 1000))
-  const mm = String(Math.floor(elapsed / 60)).padStart(2, "0")
-  const ss = String(elapsed % 60).padStart(2, "0")
-  return `${mm}:${ss}`
-}
-
-/**
- * Highlight bold segments in activity text.
- * Wraps text between **...** in a <strong> with emerald color.
- * Falls back to rendering the target field as bold when no markers found.
- */
-function ActivityText({ content, target }: { content: string; target?: string }) {
   const boldPattern = /\*\*(.+?)\*\*/g
-  if (boldPattern.test(content)) {
-    const parts = content.split(/\*\*(.+?)\*\*/)
+  if (boldPattern.test(text)) {
+    const parts = text.split(/\*\*(.+?)\*\*/)
     return (
-      <span className="text-[11px] leading-[15px] text-muted-foreground">
+      <span className={baseClass}>
         {parts.map((part, i) =>
           i % 2 === 1 ? (
-            <span key={i} className="font-medium text-foreground/80">
-              {part}
-            </span>
+            <span key={i} className={failed ? "font-medium text-amber-600/80" : "font-medium text-foreground/80"}>{part}</span>
           ) : (
             <span key={i}>{part}</span>
           ),
@@ -118,149 +133,85 @@ function ActivityText({ content, target }: { content: string; target?: string })
     )
   }
 
-  if (target) {
+  // Render backtick `code` segments
+  const codeParts = text.split(/`([^`]+)`/)
+  if (codeParts.length > 1) {
     return (
-      <span className="text-[11px] leading-[15px] text-muted-foreground">
-        {content}{" "}
-        <span className="font-medium text-emerald-500">{target}</span>
+      <span className={baseClass}>
+        {codeParts.map((part, i) =>
+          i % 2 === 1 ? (
+            <code key={i} className="font-mono text-[10px] bg-muted px-1 py-0.5 rounded text-foreground/70">{part}</code>
+          ) : (
+            <span key={i}>{part}</span>
+          ),
+        )}
       </span>
     )
   }
 
   return (
-    <span className="text-[11px] leading-[15px] text-muted-foreground">{content}</span>
+    <span className={baseClass}>{text}</span>
   )
 }
 
 // ---------------------------------------------------------------------------
-// Unified ActivityFeed component
+// ActivityFeed — flat list of real tool actions
 // ---------------------------------------------------------------------------
-export function ActivityFeed({
-  variant = "simple",
-  activities,
-  maxHeight = "300px",
-  entries,
-  maxEntries = 20,
-}: ActivityFeedProps) {
-  // ---- Simple variant ----
-  if (variant === "simple") {
-    const items = activities ?? []
+export interface ActivityFeedProps {
+  actions: ToolAction[]
+  isPolling?: boolean
+}
 
-    if (items.length === 0) {
-      return (
-        <div className="text-sm text-muted-foreground text-center py-8">
-          No activity yet
-        </div>
-      )
-    }
-
-    return (
-      <ScrollArea className={maxHeight ? `h-[${maxHeight}]` : "h-[400px]"}>
-        <div className="divide-y">
-          {items.map((activity) => (
-            <SimpleActivityItem
-              key={activity.id}
-              timestamp={activity.timestamp}
-              agent={activity.agent}
-              type={activity.type}
-              message={activity.message}
-            />
-          ))}
-        </div>
-      </ScrollArea>
-    )
-  }
-
-  // ---- Detailed variant ----
-  const [tab, setTab] = useState<"activity" | "actions">("activity")
-  const all = entries ?? []
-  const isLive = all.length > 0 && Date.now() - all[0].timestamp < 120_000
-
-  // Split: "actions" = precise agent ops (tool calls, task steps, init)
-  // "activity" = everything else (user events, lifecycle, handoffs)
-  const ACTION_TYPES = new Set(["tool:file_write", "tool:file_read", "tool:memory", "tool:search", "tool:bash", "tool:api", "task:start", "task:complete"])
-  const activityEntries = all.filter(e => !ACTION_TYPES.has(e.type))
-  const actionEntries = all.filter(e => ACTION_TYPES.has(e.type))
-
-  const visible = (tab === "activity" ? activityEntries : actionEntries).slice(0, maxEntries)
-
+export function ActivityFeed({ actions, isPolling }: ActivityFeedProps) {
   return (
     <div className="flex flex-col shrink-0 border-t border-border">
       {/* Header */}
       <div className="flex items-center justify-between px-4 py-2.5 border-b border-border">
         <div className="flex items-center gap-1.5">
-          {isLive && (
-            <span className="inline-block h-[5px] w-[5px] rounded-full bg-emerald-500 shrink-0" />
+          {isPolling && (
+            <span className="inline-block h-[5px] w-[5px] rounded-full bg-emerald-500 shrink-0 animate-pulse" />
           )}
           <span className="text-[11px] font-medium uppercase tracking-wider text-muted-foreground">
             Activity
           </span>
+          {actions.length > 0 && (
+            <span className="text-[10px] text-muted-foreground/50">
+              {actions.length}
+            </span>
+          )}
         </div>
-        {isLive && (
+        {isPolling && (
           <span className="text-[10px] text-muted-foreground/50">Live</span>
         )}
       </div>
 
-      {/* Pill tabs */}
-      <div className="flex items-center gap-1.5 px-3 pt-2.5 pb-2 shrink-0">
-        <button
-          onClick={() => setTab("activity")}
-          className={cn(
-            "px-3 py-1 text-[11px] font-medium rounded-full transition-colors",
-            tab === "activity"
-              ? "bg-[var(--brand)] text-[var(--confirm-foreground)]"
-              : "bg-muted text-muted-foreground hover:bg-accent",
-          )}
-        >
-          Activity
-          {activityEntries.length > 0 && (
-            <span className="ml-1 opacity-70">{activityEntries.length}</span>
-          )}
-        </button>
-        <button
-          onClick={() => setTab("actions")}
-          className={cn(
-            "px-3 py-1 text-[11px] font-medium rounded-full transition-colors",
-            tab === "actions"
-              ? "bg-[var(--brand)] text-[var(--confirm-foreground)]"
-              : "bg-muted text-muted-foreground hover:bg-accent",
-          )}
-        >
-          Actions
-          {actionEntries.length > 0 && (
-            <span className="ml-1 opacity-70">{actionEntries.length}</span>
-          )}
-        </button>
-      </div>
-
-      {/* Entries */}
+      {/* Actions list */}
       <div className="flex flex-col py-1 px-3 gap-0.5 overflow-y-auto max-h-[240px]">
-        {visible.length === 0 && (
+        {actions.length === 0 && (
           <span className="text-[11px] text-muted-foreground/50 px-2 py-3">
-            {tab === "activity" ? "No activity yet" : "No actions yet"}
+            Waiting for agent activity...
           </span>
         )}
-        {visible.map((entry) => (
-          <div key={entry.id} className="flex items-start py-1 gap-2">
+        {[...actions].reverse().map((action) => (
+          <div key={action.id} className="flex items-start py-1 gap-2">
             {/* Timestamp */}
             <span className="text-[9px] font-mono text-muted-foreground/50 shrink-0 mt-px leading-3">
-              {formatElapsed(entry.timestamp)}
+              {formatTime(action.timestamp)}
             </span>
-            {/* Dot */}
-            <span
-              className={cn(
-                "inline-block h-1 w-1 rounded-full shrink-0 mt-[5px]",
-                entry.type.startsWith("tool:file_write") ? "bg-blue-500" :
-                entry.type.startsWith("tool:") ? "bg-zinc-400" :
-                entry.type.startsWith("task:complete") ? "bg-emerald-500" :
-                entry.type.startsWith("task:start") ? "bg-amber-500" :
-                entry.type.startsWith("agent:error") ? "bg-red-500" :
-                entry.type.startsWith("agent:") ? "bg-amber-500" :
-                "bg-muted-foreground/50",
-              )}
-            />
             {/* Content */}
-            <ActivityText content={entry.content} target={entry.target} />
+            <div className="flex flex-col gap-0.5 min-w-0">
+              <ActionText
+                text={describeToolAction(action)}
+                failed={isDelegation(action) && action.status !== "completed"}
+              />
+              {action.durationMs != null && action.durationMs > 0 && (
+                <span className="text-[9px] text-muted-foreground/40">
+                  {action.durationMs < 1000
+                    ? `${action.durationMs}ms`
+                    : `${(action.durationMs / 1000).toFixed(1)}s`}
+                </span>
+              )}
+            </div>
           </div>
         ))}
       </div>

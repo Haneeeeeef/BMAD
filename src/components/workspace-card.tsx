@@ -53,7 +53,7 @@ export function WorkspaceCard({ project }: { project: Project }) {
 
   return (
     <Link href={`/projects/${project.id}`} className="block group">
-      <div className="bg-white rounded-[10px] border border-zinc-200 overflow-hidden hover:shadow-md hover:border-zinc-300 transition-all duration-200">
+      <div className="relative bg-white rounded-[10px] border border-zinc-200 overflow-hidden transition-all duration-200 hover:-translate-y-0.5 hover:bg-[var(--brand)]/[0.03] group-active:scale-[0.98]">
         {/* Top section */}
         <div className="px-6 pt-5 pb-4">
           <div className="flex items-center gap-3 mb-3">
@@ -66,7 +66,7 @@ export function WorkspaceCard({ project }: { project: Project }) {
               </span>
             </div>
             <div className="min-w-0">
-              <h3 className="text-[15px] font-semibold text-zinc-900 truncate">
+              <h3 className="text-[15px] font-semibold text-zinc-900 group-hover:text-zinc-900 truncate">
                 {project.name}
               </h3>
               <p className="text-xs text-zinc-400">
@@ -86,6 +86,9 @@ export function WorkspaceCard({ project }: { project: Project }) {
             <span className={`text-xs font-medium ${style.text}`}>{style.label}</span>
           </div>
         </div>
+
+        {/* Bottom accent bar */}
+        <div className="absolute bottom-0 left-0 right-0 h-[3px] bg-transparent group-hover:bg-[var(--brand)] transition-all duration-200" />
       </div>
     </Link>
   )

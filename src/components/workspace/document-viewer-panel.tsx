@@ -28,7 +28,9 @@ const STATUS_LABEL: Record<DocumentItem["status"], { text: string; color: string
 
 /** Strip YAML frontmatter (---..---) from markdown content */
 function stripFrontmatter(md: string): string {
-  return md.replace(/^---[\s\S]*?---\n*/, "").trim()
+  // Match opening --- on its own line, then content, then closing --- on its own line.
+  // The closing --- must be at the start of a line (not inside a table row like |---|---|).
+  return md.replace(/^---\n[\s\S]*?\n---\n*/, "").trim()
 }
 
 /** Strip agent-generated footer lines like "*Product Brief complete — ready for PRD creation*" */

@@ -144,6 +144,7 @@ export function TemplateSelector({ onBack }: TemplateSelectorProps) {
             name: area,
             status: "pending" as const,
           })) || [],
+          sessionId: `session-${Date.now()}-0`,
         },
       ],
       inputDocuments: [],

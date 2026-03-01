@@ -19,6 +19,7 @@ import {
 } from "@/lib/bmad-types"
 
 type IntakeData = {
+  title: string
   description: string
   files: ExtractedFile[]
 }
@@ -29,6 +30,8 @@ type DraftState = {
   stage: Stage
   projectType: ProjectType | null
   intakeData: IntakeData | null
+  /** Live title while user is typing (before submit) */
+  liveTitle?: string
   /** Live description while user is typing (before submit) */
   liveDescription?: string
   /** Selected deliverable types on the picker step */
@@ -66,6 +69,7 @@ export default function NewProjectPage() {
   const [stage, setStage] = useState<Stage>("type-select")
   const [projectType, setProjectType] = useState<ProjectType | null>(null)
   const [intakeData, setIntakeData] = useState<IntakeData | null>(null)
+  const [liveTitle, setLiveTitle] = useState("")
   const [liveDescription, setLiveDescription] = useState("")
   const [selectedDeliverables, setSelectedDeliverables] = useState<DeliverableType[]>([])
 
@@ -81,6 +85,7 @@ export default function NewProjectPage() {
         setStage(draft.stage)
         setProjectType(draft.projectType)
         setIntakeData(draft.intakeData)
+        setLiveTitle(draft.liveTitle || draft.intakeData?.title || "")
         setLiveDescription(draft.liveDescription || draft.intakeData?.description || "")
         setSelectedDeliverables(draft.selectedDeliverables || [])
       }
@@ -91,8 +96,8 @@ export default function NewProjectPage() {
   // Save draft on changes
   useEffect(() => {
     if (!isLoaded) return
-    saveDraft({ stage, projectType, intakeData, liveDescription, selectedDeliverables })
-  }, [stage, projectType, intakeData, liveDescription, selectedDeliverables, isLoaded])
+    saveDraft({ stage, projectType, intakeData, liveTitle, liveDescription, selectedDeliverables })
+  }, [stage, projectType, intakeData, liveTitle, liveDescription, selectedDeliverables, isLoaded])
 
   const handleTypeSelect = (type: ProjectType) => {
     setProjectType(type)
@@ -106,9 +111,14 @@ export default function NewProjectPage() {
 
   const handleIntakeComplete = (data: IntakeData) => {
     setIntakeData(data)
+    setLiveTitle(data.title)
     setLiveDescription(data.description)
     setStage("picker")
   }
+
+  const handleTitleChange = useCallback((t: string) => {
+    setLiveTitle(t)
+  }, [])
 
   const handleDescriptionChange = useCallback((desc: string) => {
     setLiveDescription(desc)
@@ -121,9 +131,7 @@ export default function NewProjectPage() {
   const handlePickerConfirm = async (selectedTypes: DeliverableType[], inputDocs: File[]) => {
     if (!intakeData) return
 
-    // Auto-generate name from first few words of description
-    const words = intakeData.description.trim().split(/\s+/).slice(0, 5).join(" ")
-    const projectName = words.length > 30 ? words.slice(0, 30) + "..." : words
+    const projectName = intakeData.title.trim()
 
     const deliverables: Deliverable[] = selectedTypes.map((type, index) => {
       const template = AVAILABLE_DELIVERABLES.find((d) => d.type === type)!
@@ -144,6 +152,7 @@ export default function NewProjectPage() {
         status: index === 0 ? "in-progress" : "queued",
         progress: 0,
         tasks,
+        sessionId: `session-${Date.now()}-${index}`,
       }
     })
 
@@ -244,7 +253,8 @@ export default function NewProjectPage() {
         <ProjectIntake
           onComplete={handleIntakeComplete}
           onBack={handleIntakeBack}
-          initialData={intakeData ? intakeData : liveDescription ? { description: liveDescription, files: [] } : undefined}
+          initialData={intakeData ? intakeData : (liveTitle || liveDescription) ? { title: liveTitle, description: liveDescription, files: [] } : undefined}
+          onTitleChange={handleTitleChange}
           onDescriptionChange={handleDescriptionChange}
         />
       )}

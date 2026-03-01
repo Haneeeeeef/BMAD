@@ -224,7 +224,7 @@ export async function POST(request: Request) {
       })
     }
 
-    // Stream the response
+    // Stream the response — buffer incomplete SSE lines across TCP reads
     const encoder = new TextEncoder()
     const decoder = new TextDecoder()
 
@@ -236,45 +236,69 @@ export async function POST(request: Request) {
           return
         }
 
+        let buffer = ""
+
         try {
           while (true) {
             const { done, value } = await reader.read()
             if (done) break
 
-            const chunk = decoder.decode(value, { stream: true })
-            const lines = chunk.split("\n")
+            buffer += decoder.decode(value, { stream: true })
+            const lines = buffer.split("\n")
+            // Keep the last element — it may be an incomplete line
+            buffer = lines.pop() ?? ""
 
             for (const line of lines) {
-              if (line.startsWith("data: ")) {
-                const data = line.slice(6)
-                if (data === "[DONE]") {
-                  controller.enqueue(encoder.encode("data: [DONE]\n\n"))
-                  continue
-                }
-
-                try {
-                  const json = JSON.parse(data)
-                  const delta = json.choices?.[0]?.delta
-
-                  // Handle reasoning/thinking content (Kimi K2.5)
-                  const reasoning = delta?.reasoning_content || delta?.thinking
-                  if (reasoning) {
-                    controller.enqueue(
-                      encoder.encode(`data: ${JSON.stringify({ reasoning })}\n\n`)
-                    )
-                  }
-
-                  // Handle regular content
-                  const content = delta?.content
-                  if (content) {
-                    controller.enqueue(
-                      encoder.encode(`data: ${JSON.stringify({ content })}\n\n`)
-                    )
-                  }
-                } catch {
-                  // Skip malformed JSON
-                }
+              if (!line.startsWith("data: ")) continue
+              const data = line.slice(6)
+              if (data === "[DONE]") {
+                controller.enqueue(encoder.encode("data: [DONE]\n\n"))
+                continue
               }
+
+              try {
+                const json = JSON.parse(data)
+                const delta = json.choices?.[0]?.delta
+
+                // Handle reasoning/thinking content (Kimi K2.5)
+                const reasoning = delta?.reasoning_content || delta?.thinking
+                if (reasoning) {
+                  controller.enqueue(
+                    encoder.encode(`data: ${JSON.stringify({ reasoning })}\n\n`)
+                  )
+                }
+
+                // Handle regular content
+                const content = delta?.content
+                if (content) {
+                  controller.enqueue(
+                    encoder.encode(`data: ${JSON.stringify({ content })}\n\n`)
+                  )
+                }
+              } catch {
+                // Skip malformed JSON
+              }
+            }
+          }
+
+          // Process any remaining buffered data
+          if (buffer.startsWith("data: ")) {
+            const data = buffer.slice(6)
+            if (data === "[DONE]") {
+              controller.enqueue(encoder.encode("data: [DONE]\n\n"))
+            } else {
+              try {
+                const json = JSON.parse(data)
+                const delta = json.choices?.[0]?.delta
+                const reasoning = delta?.reasoning_content || delta?.thinking
+                if (reasoning) {
+                  controller.enqueue(encoder.encode(`data: ${JSON.stringify({ reasoning })}\n\n`))
+                }
+                const content = delta?.content
+                if (content) {
+                  controller.enqueue(encoder.encode(`data: ${JSON.stringify({ content })}\n\n`))
+                }
+              } catch { /* skip */ }
             }
           }
         } finally {
