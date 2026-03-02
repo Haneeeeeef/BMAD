@@ -240,20 +240,21 @@ export const DocumentViewerPanel = memo(function DocumentViewerPanel({
                   <td className="px-2 py-1 text-foreground/70 align-top">{children}</td>
                 ),
                 /* ── other ── */
+                pre: ({ children }) => (
+                  <pre className="bg-muted rounded-md border border-border p-3 overflow-x-auto whitespace-pre text-[11px] leading-[16px] text-foreground/80 font-mono">
+                    {children}
+                  </pre>
+                ),
                 code: ({ children, className }) => {
-                  const isBlock = className?.includes("language-")
-                  if (isBlock) {
-                    return (
-                      <pre className="bg-muted rounded-md border border-border p-3 overflow-x-auto">
-                        <code className="text-[11px] leading-[16px] text-foreground/80 font-mono">{children}</code>
-                      </pre>
-                    )
+                  // Inside a <pre>, just pass through (pre handles block styling)
+                  if (className?.includes("language-")) {
+                    return <code>{children}</code>
                   }
+                  // Inline code
                   return (
                     <code className="bg-muted rounded px-1 py-0.5 text-[11px] font-mono text-foreground/80">{children}</code>
                   )
                 },
-                pre: ({ children }) => <>{children}</>,
                 blockquote: ({ children }) => (
                   <blockquote className="border-l-2 border-border pl-3 text-[13px] leading-5 text-muted-foreground italic">
                     {children}
