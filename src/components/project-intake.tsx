@@ -2,7 +2,8 @@
 
 import { useState, useCallback } from "react"
 import { motion } from "framer-motion"
-import { Info } from "lucide-react"
+import { Info, Sparkles, Loader2 } from "lucide-react"
+import { authHeaders } from "@/lib/safe-storage"
 import { Input } from "@/components/ui/input"
 import { Textarea } from "@/components/ui/textarea"
 import { OnboardingHeader } from "@/components/ui/onboarding-header"
@@ -22,6 +23,27 @@ export function ProjectIntake({ onComplete, onBack, initialData, onDescriptionCh
   const [description, setDescription] = useState(initialData?.description || "")
   const [files, setFiles] = useState<ExtractedFile[]>(initialData?.files || [])
   const [showUpload, setShowUpload] = useState((initialData?.files?.length || 0) > 0)
+  const [isReformatting, setIsReformatting] = useState(false)
+
+  const handleReformat = useCallback(async () => {
+    if (isReformatting || description.trim().length < 5) return
+    setIsReformatting(true)
+    try {
+      const res = await fetch("/api/reformat-description", {
+        method: "POST",
+        headers: authHeaders({ "Content-Type": "application/json" }),
+        body: JSON.stringify({ description: description.trim(), title: title.trim() || undefined }),
+      })
+      if (res.ok) {
+        const data = await res.json()
+        if (data.description) {
+          setDescription(data.description)
+          onDescriptionChange?.(data.description)
+        }
+      }
+    } catch { /* silent */ }
+    finally { setIsReformatting(false) }
+  }, [description, title, isReformatting, onDescriptionChange])
 
   const handleFilesReady = useCallback((extracted: ExtractedFile[]) => {
     setFiles(extracted)
@@ -69,7 +91,7 @@ export function ProjectIntake({ onComplete, onBack, initialData, onDescriptionCh
           </div>
 
           {/* Description */}
-          <div>
+          <div className="relative">
             <Textarea
               value={description}
               onChange={(e) => {
@@ -80,8 +102,23 @@ export function ProjectIntake({ onComplete, onBack, initialData, onDescriptionCh
               aria-label="Workspace description"
               required
               aria-required="true"
-              className="min-h-[120px] bg-white border-zinc-200 resize-none text-base shadow-none focus-visible:ring-0 focus-visible:border-zinc-300 placeholder:text-zinc-400"
+              className="min-h-[120px] bg-white border-zinc-200 resize-none text-base shadow-none focus-visible:ring-0 focus-visible:border-zinc-300 placeholder:text-zinc-400 pr-10"
             />
+            {description.trim().length >= 5 && (
+              <button
+                type="button"
+                onClick={handleReformat}
+                disabled={isReformatting}
+                title="Reformat with AI"
+                className="absolute bottom-2.5 right-2.5 p-1 rounded-md text-zinc-400 hover:text-[var(--brand)] hover:bg-zinc-100 transition-colors disabled:opacity-50"
+              >
+                {isReformatting ? (
+                  <Loader2 className="h-4 w-4 animate-spin" />
+                ) : (
+                  <Sparkles className="h-4 w-4" />
+                )}
+              </button>
+            )}
           </div>
 
           {/* Upload Section */}
