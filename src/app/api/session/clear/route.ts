@@ -19,8 +19,8 @@ function slugify(name: string): string {
   return name.toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-|-$/g, "")
 }
 
-function getFlushPrompt(projectSlug: string, contextInfo?: string): string {
-  return `MEMORY FLUSH TRIGGERED. Do these in order:
+function getFlushPrompt(projectSlug: string, agentId: string, contextInfo?: string): string {
+  return `MEMORY FLUSH TRIGGERED. You are agent "${agentId}". Do these in order:
 
 1. FIRST: Update PROJECT-CONTEXT.md in /home/haneef/workspaces/jarvis/projects/${projectSlug}:
 
@@ -50,16 +50,18 @@ function getFlushPrompt(projectSlug: string, contextInfo?: string): string {
    - If any are missing, append them now
    - The transcript is the source of truth for document creation
 
-4. Write session summary to /home/haneef/workspaces/jarvis/projects/${projectSlug}/memory/YYYY-MM-DD.md
+4. Write session summary to /home/haneef/workspaces/jarvis/projects/${projectSlug}/memory/${agentId}-YYYY-MM-DD.md
    - ALWAYS create this file (mkdir -p the memory folder if needed).
+   - Use YOUR agent ID "${agentId}" as prefix in the filename.
    - Brief log of what happened this session.
    - Never skip this step.
 
-5. Update /home/haneef/workspaces/jarvis/projects/${projectSlug}/MEMORY.md with accumulated insights:
+5. Update /home/haneef/workspaces/jarvis/projects/${projectSlug}/MEMORY-${agentId}.md with accumulated insights:
    - Key decisions and reasoning
    - Lessons learned
    - Patterns discovered
-   - This is cross-session knowledge for THIS PROJECT, not a session log.
+   - This is cross-session knowledge for THIS PROJECT from YOUR perspective, not a session log.
+   - Do NOT write to a plain MEMORY.md — always use the agent-prefixed filename.
 
 ${contextInfo ? `\nContext usage at time of flush: ${contextInfo}\nInclude this in your memory/session summary.\n` : ""}
 IMPORTANT: After compaction, you MUST read both PROJECT-CONTEXT.md and
@@ -120,7 +122,7 @@ export async function POST(request: Request) {
             },
             body: JSON.stringify({
               model: `openclaw:${targetAgent}`,
-              messages: [{ role: "user", content: getFlushPrompt(projectSlug, contextInfo) }],
+              messages: [{ role: "user", content: getFlushPrompt(projectSlug, targetAgent, contextInfo) }],
               stream: false,
               max_tokens: 8000,
             }),

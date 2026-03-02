@@ -39,7 +39,7 @@ export async function GET(request: Request) {
         args: {
           sessionKey,
           includeTools: true,
-          limit: 50,
+          limit: 200,
         },
       }),
     })
