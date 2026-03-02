@@ -64,8 +64,11 @@ function getFlushPrompt(projectSlug: string, agentId: string, contextInfo?: stri
    - Do NOT write to a plain MEMORY.md — always use the agent-prefixed filename.
 
 ${contextInfo ? `\nContext usage at time of flush: ${contextInfo}\nInclude this in your memory/session summary.\n` : ""}
-IMPORTANT: After compaction, you MUST read both PROJECT-CONTEXT.md and
-WORKFLOW-TRANSCRIPT-*.md to continue where you left off.
+IMPORTANT: After compaction, you MUST read these to continue where you left off:
+1. PROJECT-CONTEXT.md — project state and active work
+2. PROJECT-DECISIONS.md — decisions made so far
+3. Your WORKFLOW-TRANSCRIPT-{workflow}.md — your curated step summaries
+4. The LAST 10 entries of the full MC transcript (WORKFLOW-TRANSCRIPT-FULL-*.md if it exists) for recent conversation context
 
 Reply "DONE" when finished.`
 }

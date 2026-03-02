@@ -32,6 +32,7 @@ import {
   buildWorkflowSystemMessage,
   buildWorkflowUserMessage,
   AVAILABLE_DELIVERABLES,
+  type ProjectContextFiles,
 } from "@/lib/bmad-types"
 import { Message, Attachment, generateId } from "@/lib/types"
 import { fileToAttachment } from "@/lib/attachments"
@@ -260,19 +261,15 @@ export function OrchestrationWorkspace({ project, onProjectUpdate }: Orchestrati
   }, [project, onProjectUpdate])
 
   // Detect workflow progress from AI response text (advances step timeline)
+  // IMPORTANT: Patterns must be strict — only match explicit completion signals,
+  // NOT conversational transitions like "let's move on" or "great, now let's discuss"
   const detectWorkflowProgress = useCallback((content: string) => {
-    // Task/section completion patterns — advance the workflow step timeline
+    // Step completion — only match explicit "step N complete/done" or checkmark signals
     const completionPatterns = [
-      /✅.*complete/i,
-      /section.*saved/i,
-      /step.*complete/i,
-      /finished.*section/i,
-      /moving (?:on )?to/i,
-      /let'?s (?:move|proceed|continue) (?:to|with)/i,
-      /now let'?s (?:discuss|explore|cover|look at)/i,
-      /great[!,.]?\s*(?:now|next|let'?s)/i,
-      /that covers/i,
-      /captured.*(?:section|area|topic)/i,
+      /✅\s*.*(complete|done|captured|finished)/i,
+      /step\s+\d+\s*(?:is\s+)?(?:complete|done|finished)/i,
+      /(?:section|step)\s+(?:complete|done|finished)[.!]?\s*$/im,
+      /saved.*(?:section|step).*(?:to|in)\s+/i,
     ]
     for (const pattern of completionPatterns) {
       if (pattern.test(content)) {
@@ -281,14 +278,12 @@ export function OrchestrationWorkspace({ project, onProjectUpdate }: Orchestrati
       }
     }
 
-    // Workflow / deliverable completion — mark current deliverable as done
+    // Deliverable completion — only match explicit artifact save confirmations
     const workflowDonePatterns = [
-      /(?:document|artifact|brief|prd|spec|architecture).*(?:saved|written|created|finalized|complete)/i,
-      /(?:workflow|deliverable)\s+(?:is\s+)?(?:completed?|finished?|done)/i,
-      /(?:agent|workflow|task)\s+(?:completed?|finished?|done)/i,
-      /reports? (?:back|completion)/i,
       /saved.*(?:to|in|at)\s+[`"']?artifacts?\//i,
-      /all\s+(?:sections?|steps?)\s+(?:are\s+)?(?:completed?|done|finished)/i,
+      /(?:written|saved|created)\s+(?:to|at)\s+[`"']?artifacts?\//i,
+      /(?:workflow|deliverable)\s+(?:is\s+)?(?:completed?|finished?|done)[.!]?\s*$/im,
+      /all\s+(?:sections?|steps?)\s+(?:are\s+)?(?:completed?|done|finished)[.!]?\s*$/im,
     ]
     for (const pattern of workflowDonePatterns) {
       if (pattern.test(content)) {
@@ -543,12 +538,23 @@ export function OrchestrationWorkspace({ project, onProjectUpdate }: Orchestrati
 
   // Start workflow when deliverable becomes active
   // The ref guard prevents double-fire of the initial workflow message.
+  // Fetches available project files from VPS so the agent knows what to read.
   useEffect(() => {
     if (currentDeliverable && currentWorkflow && !workflowStarted.current && messages.length === 0) {
       workflowStarted.current = true
-      const systemMsg = buildWorkflowSystemMessage(currentWorkflow, project)
-      const userMsg = buildWorkflowUserMessage(currentWorkflow)
-      sendMessage(userMsg, true, systemMsg)
+
+      const projectSlug = slugify(project.name)
+      // Discover available context files, then start the workflow
+      fetch(`/api/project-context?project=${encodeURIComponent(projectSlug)}`, {
+        headers: authHeaders(),
+      })
+        .then(res => res.ok ? res.json() as Promise<ProjectContextFiles> : null)
+        .catch(() => null)
+        .then((contextFiles) => {
+          const systemMsg = buildWorkflowSystemMessage(currentWorkflow!, project, contextFiles ?? undefined)
+          const userMsg = buildWorkflowUserMessage(currentWorkflow!)
+          sendMessage(userMsg, true, systemMsg)
+        })
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [currentDeliverable, currentWorkflow, messages.length])

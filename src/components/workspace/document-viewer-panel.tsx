@@ -163,22 +163,22 @@ export const DocumentViewerPanel = memo(function DocumentViewerPanel({
               remarkPlugins={[remarkGfm]}
               components={{
                 h1: ({ children }) => (
-                  <h2 className="text-[11px] font-semibold uppercase tracking-[0.05em] text-muted-foreground leading-[14px] mt-2.5 mb-1 first:mt-0">
+                  <h2 className="text-[15px] font-bold text-foreground leading-[20px] mt-4 mb-1.5 first:mt-0 pb-1.5 border-b border-border/60">
                     {children}
                   </h2>
                 ),
                 h2: ({ children }) => (
-                  <h2 className="text-[11px] font-semibold uppercase tracking-[0.05em] text-muted-foreground leading-[14px] mt-2.5 mb-1 first:mt-0">
+                  <h2 className="text-[15px] font-bold text-foreground leading-[20px] mt-4 mb-1.5 first:mt-0 pb-1.5 border-b border-border/60">
                     {children}
                   </h2>
                 ),
                 h3: ({ children }) => (
-                  <h3 className="text-[13px] font-semibold text-foreground/80 leading-[18px] mt-2 mb-0.5">
+                  <h3 className="text-[13px] font-semibold text-foreground/90 leading-[18px] mt-3 mb-1">
                     {children}
                   </h3>
                 ),
                 h4: ({ children }) => (
-                  <h4 className="text-[12px] font-semibold text-foreground/70 leading-[16px] mt-1.5 mb-0.5">
+                  <h4 className="text-[12px] font-semibold text-foreground/70 leading-[16px] mt-2 mb-0.5">
                     {children}
                   </h4>
                 ),

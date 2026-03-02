@@ -1221,11 +1221,22 @@ export function searchWorkflows(query: string): BmadWorkflow[] {
 }
 
 // Build the command to start a workflow
+/** Available project context returned by /api/project-context */
+export type ProjectContextFiles = {
+  available: { path: string; label: string }[]
+  transcripts: string[]
+}
+
 /**
  * Build the system message for workflow kickoff (hidden from user).
- * Minimal — just project context. Personality comes from SOUL.md.
+ * Structured with headings. Includes dynamic context: tells the agent
+ * exactly which prior files exist and to read them before starting work.
  */
-export function buildWorkflowSystemMessage(workflow: BmadWorkflow, project: BmadProject): string {
+export function buildWorkflowSystemMessage(
+  workflow: BmadWorkflow,
+  project: BmadProject,
+  contextFiles?: ProjectContextFiles,
+): string {
   const projectSlug = project.name
     .toLowerCase()
     .replace(/[^a-z0-9]+/g, '-')
@@ -1235,18 +1246,66 @@ export function buildWorkflowSystemMessage(workflow: BmadWorkflow, project: Bmad
   const vpsBase = process.env.VPS_PROJECTS_BASE || "/home/haneef/workspaces/jarvis/projects"
   const projectRoot = `${vpsBase}/${projectSlug}`
 
-  const parts = [
-    `[Mission Control] Workflow: ${workflow.id}`,
-    `Project: ${project.name}`,
-    `Description: ${project.description}`,
-    `Project workspace: ${projectRoot}`,
-  ]
+  const parts: string[] = []
 
-  if (project.context.industry) parts.push(`Industry: ${project.context.industry}`)
-  if (project.context.techStack) parts.push(`Tech Stack: ${project.context.techStack}`)
+  // Header
+  parts.push(`# Mission Control — ${workflow.name}`)
+  parts.push("")
 
+  // Project overview
+  parts.push(`## Project`)
+  parts.push(`**Name:** ${project.name}`)
+  parts.push(`**Workspace:** ${projectRoot}`)
+  if (project.context.industry) parts.push(`**Industry:** ${project.context.industry}`)
+  if (project.context.techStack) parts.push(`**Tech Stack:** ${project.context.techStack}`)
+  parts.push("")
+
+  // Full description
+  if (project.description) {
+    parts.push(`## Project Description`)
+    parts.push(project.description)
+    parts.push("")
+  }
+
+  // Input documents
   if (project.inputDocuments?.length) {
-    parts.push(`Input documents: ${project.inputDocuments.length} files uploaded to ${projectRoot}/uploads/`)
+    parts.push(`## Uploaded Documents`)
+    parts.push(`${project.inputDocuments.length} files uploaded to \`${projectRoot}/uploads/\``)
+    parts.push("")
+  }
+
+  // Completed deliverables — tell the agent what phase they're picking up from
+  const completedDeliverables = project.deliverables.filter(d =>
+    d.status === "complete" || d.status === "validated"
+  )
+  if (completedDeliverables.length > 0) {
+    parts.push(`## Completed Prior Work`)
+    parts.push(`The following deliverables have been completed before your workflow:`)
+    for (const d of completedDeliverables) {
+      const w = getWorkflowById(d.workflowId)
+      const agentMeta = BMAD_AGENTS[w?.agent as keyof typeof BMAD_AGENTS]
+      const agentName = agentMeta ? `${agentMeta.name} (${agentMeta.role})` : w?.agent || "unknown"
+      parts.push(`- **${d.name}** — completed by ${agentName}`)
+    }
+    parts.push("")
+  }
+
+  // Dynamic context: tell agent exactly which files to read
+  if (contextFiles && (contextFiles.available.length > 0 || contextFiles.transcripts.length > 0)) {
+    parts.push(`## Required Reading`)
+    parts.push(`BEFORE asking your first question, read these project files:`)
+    for (const f of contextFiles.available) {
+      parts.push(`- \`${projectRoot}/${f.path}\` — ${f.label}`)
+    }
+    for (const t of contextFiles.transcripts) {
+      parts.push(`- \`${projectRoot}/${t}\` — workflow transcript (curated step summaries from prior work)`)
+    }
+    parts.push("")
+    parts.push(`Read all of the above first. Use them to understand what has been decided, who the users are, and what the project needs — so you don't re-ask questions that have already been answered.`)
+    if (completedDeliverables.length > 0) {
+      parts.push(`This is NOT a fresh project — prior phases have been completed. Greet the user warmly, acknowledge the prior work, and build on it.`)
+    }
+    parts.push("")
   }
 
   return parts.join('\n')
