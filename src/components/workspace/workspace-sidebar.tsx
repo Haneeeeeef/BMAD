@@ -19,6 +19,7 @@ interface WorkspaceSidebarProps {
   onAgentClick: (id: string) => void
   onAddDeliverable?: () => void
   onDeleteDeliverable?: (id: string) => void
+  onForceComplete?: (id: string) => void
 }
 
 export function WorkspaceSidebar({
@@ -31,6 +32,7 @@ export function WorkspaceSidebar({
   onAgentClick,
   onAddDeliverable,
   onDeleteDeliverable,
+  onForceComplete,
 }: WorkspaceSidebarProps) {
   // Derive agents from actual workflow definitions — no hardcoded map.
   // Each deliverable's workflow declares which agent runs it.
@@ -51,6 +53,7 @@ export function WorkspaceSidebar({
         onDeliverableClick={onDeliverableClick}
         onAddDeliverable={onAddDeliverable}
         onDeleteDeliverable={onDeleteDeliverable}
+        onForceComplete={onForceComplete}
       />
       <AgentsList
         agents={projectAgents}

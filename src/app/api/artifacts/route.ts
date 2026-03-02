@@ -28,7 +28,7 @@ const ARTIFACT_PATHS: Record<string, string> = {
   "generate-context": "PROJECT-CONTEXT.md",
   "project-decisions": "PROJECT-DECISIONS.md",
   "document-project": "artifacts/docs/project-docs.md",
-  "qa-tests": "artifacts/implementation/tests/test-plan.md",
+  "qa-tests": "artifacts/qa/test-plan.md",
   brainstorming: "artifacts/planning/brainstorm.md",
   "advanced-elicitation": "artifacts/planning/elicitation.md",
 }

@@ -12,6 +12,7 @@ interface DeliverablesListProps {
   onDeliverableClick: (id: string) => void
   onAddDeliverable?: () => void
   onDeleteDeliverable?: (id: string) => void
+  onForceComplete?: (id: string) => void
 }
 
 const STATUS_LABEL: Record<Deliverable["status"], string> = {
@@ -52,17 +53,23 @@ const DeliverableRow = memo(function DeliverableRow({
   isActive,
   onClick,
   onDelete,
+  onForceComplete,
 }: {
   deliverable: Deliverable
   isActive: boolean
   onClick: (id: string) => void
   onDelete?: (id: string) => void
+  onForceComplete?: (id: string) => void
 }) {
   const handleClick = useCallback(() => onClick(deliverable.id), [onClick, deliverable.id])
   const handleDelete = useCallback((e: React.MouseEvent) => {
     e.stopPropagation()
     onDelete?.(deliverable.id)
   }, [onDelete, deliverable.id])
+  const handleForceComplete = useCallback((e: React.MouseEvent) => {
+    e.stopPropagation()
+    onForceComplete?.(deliverable.id)
+  }, [onForceComplete, deliverable.id])
 
   return (
     <div
@@ -89,9 +96,22 @@ const DeliverableRow = memo(function DeliverableRow({
       >
         {deliverable.name}
       </span>
-      <span className={cn("text-xs shrink-0 font-medium", STATUS_LABEL_COLOR[deliverable.status])}>
-        {STATUS_LABEL[deliverable.status]}
-      </span>
+      {deliverable.status === "in-progress" && onForceComplete ? (
+        <span
+          role="button"
+          tabIndex={0}
+          onClick={handleForceComplete}
+          onKeyDown={(e) => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); handleForceComplete(e as unknown as React.MouseEvent) } }}
+          className="text-xs shrink-0 font-medium text-amber-500 hover:text-emerald-500 cursor-pointer transition-colors"
+          title="Click to mark as done"
+        >
+          Running
+        </span>
+      ) : (
+        <span className={cn("text-xs shrink-0 font-medium", STATUS_LABEL_COLOR[deliverable.status])}>
+          {STATUS_LABEL[deliverable.status]}
+        </span>
+      )}
       {onDelete && (
         <button
           onClick={handleDelete}
@@ -111,6 +131,7 @@ export function DeliverablesList({
   onDeliverableClick,
   onAddDeliverable,
   onDeleteDeliverable,
+  onForceComplete,
 }: DeliverablesListProps) {
   return (
     <div className="flex flex-col flex-1 min-h-0">
@@ -139,6 +160,7 @@ export function DeliverablesList({
             isActive={d.id === currentDeliverableId}
             onClick={onDeliverableClick}
             onDelete={onDeleteDeliverable}
+            onForceComplete={onForceComplete}
           />
         ))}
       </div>

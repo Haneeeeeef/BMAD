@@ -38,6 +38,21 @@ function stripAgentFooter(md: string): string {
   return md.replace(/\n---\s*\n\*[^*]*(?:complete|ready|created|updated|generated)[^*]*\*\s*$/, "").trimEnd()
 }
 
+/** Convert bold-label paragraphs like "**Problem Statement** text..." into proper headings */
+function promoteBoldLabels(md: string): string {
+  // Match: start of line, **Label** followed by a space and paragraph text
+  // Only promote when the bold label is 1-4 words (section heading, not inline emphasis)
+  return md.replace(
+    /^(\*\*([A-Z][^*]{1,50})\*\*)\s+(\S[\s\S]*?)(?=\n\n|\n\*\*[A-Z]|$)/gm,
+    (_, _boldFull, label, body) => {
+      // Skip if the label is too long to be a heading (likely inline bold)
+      const wordCount = label.trim().split(/\s+/).length
+      if (wordCount > 5) return _
+      return `### ${label.trim()}\n\n${body.trim()}`
+    }
+  )
+}
+
 /* ── component ────────────────────────────────────────────── */
 
 export const DocumentViewerPanel = memo(function DocumentViewerPanel({
@@ -52,7 +67,7 @@ export const DocumentViewerPanel = memo(function DocumentViewerPanel({
   const [showDownloadMenu, setShowDownloadMenu] = useState(false)
   const downloadRef = useRef<HTMLDivElement>(null)
 
-  const content = useMemo(() => stripAgentFooter(stripFrontmatter(rawContent)), [rawContent])
+  const content = useMemo(() => promoteBoldLabels(stripAgentFooter(stripFrontmatter(rawContent))), [rawContent])
 
   /* Extract title from first H1 in markdown, or use filename */
   const title = useMemo(() => {
@@ -205,24 +220,24 @@ export const DocumentViewerPanel = memo(function DocumentViewerPanel({
                 ),
                 /* ── tables ── */
                 table: ({ children }) => (
-                  <div className="overflow-x-auto rounded-md border border-border my-1">
-                    <table className="w-full text-[12px] leading-[18px]">{children}</table>
+                  <div className="overflow-x-auto rounded-md border border-border my-1 -mx-1">
+                    <table className="min-w-[480px] w-full text-[11px] leading-[15px]">{children}</table>
                   </div>
                 ),
                 thead: ({ children }) => (
-                  <thead className="bg-muted border-b border-border">{children}</thead>
+                  <thead className="bg-muted/60 border-b border-border">{children}</thead>
                 ),
                 tbody: ({ children }) => <tbody>{children}</tbody>,
                 tr: ({ children }) => (
-                  <tr className="border-b border-border/50 last:border-0">{children}</tr>
+                  <tr className="border-b border-border/40 last:border-0">{children}</tr>
                 ),
                 th: ({ children }) => (
-                  <th className="px-3 py-1.5 text-left font-semibold text-foreground/80 text-[11px] uppercase tracking-wide">
+                  <th className="px-2 py-1 text-left font-semibold text-foreground/70 text-[10px] uppercase tracking-wide whitespace-nowrap">
                     {children}
                   </th>
                 ),
                 td: ({ children }) => (
-                  <td className="px-3 py-1.5 text-foreground/70">{children}</td>
+                  <td className="px-2 py-1 text-foreground/70 align-top">{children}</td>
                 ),
                 /* ── other ── */
                 code: ({ children, className }) => {

@@ -29,6 +29,7 @@ const ARTIFACT_FILES = [
   { path: "artifacts/planning/market-research.md", label: "Market research" },
   { path: "artifacts/planning/technical-research.md", label: "Technical research" },
   { path: "artifacts/implementation/sprint-plan.md", label: "Sprint plan" },
+  { path: "artifacts/qa/test-plan.md", label: "QA test plan" },
 ]
 
 async function fileExists(slug: string, path: string): Promise<boolean> {

@@ -239,15 +239,16 @@ export function OrchestrationWorkspace({ project, onProjectUpdate }: Orchestrati
   }, [project, onProjectUpdate])
 
   // Mark current deliverable as complete
-  const markDeliverableComplete = useCallback(() => {
-    if (!project.currentDeliverable) return
-    const deliverable = project.deliverables.find(d => d.id === project.currentDeliverable)
+  const markDeliverableComplete = useCallback((targetId?: string) => {
+    const id = targetId || project.currentDeliverable
+    if (!id) return
+    const deliverable = project.deliverables.find(d => d.id === id)
     if (!deliverable || deliverable.status === "complete" || deliverable.status === "validated") return
 
     onProjectUpdate({
       ...project,
       deliverables: project.deliverables.map(d =>
-        d.id === project.currentDeliverable
+        d.id === id
           ? {
               ...d,
               status: "complete",
@@ -261,29 +262,74 @@ export function OrchestrationWorkspace({ project, onProjectUpdate }: Orchestrati
   }, [project, onProjectUpdate])
 
   // Detect workflow progress from AI response text (advances step timeline)
-  // IMPORTANT: Patterns must be strict — only match explicit completion signals,
-  // NOT conversational transitions like "let's move on" or "great, now let's discuss"
+  // Detect workflow step progress from agent response text.
+  // Uses two strategies: (1) generic completion signals, (2) next-step name mentions.
   const detectWorkflowProgress = useCallback((content: string) => {
-    // Step completion — only match explicit "step N complete/done" or checkmark signals
+    const deliverable = project.deliverables.find(d => d.id === project.currentDeliverable)
+    if (!deliverable) return
+    const wf = getWorkflowById(deliverable.workflowId)
+    if (!wf) return
+    const tasks = deliverable.tasks
+    const activeIdx = tasks.findIndex(t => t.status === "active")
+
+    // ── Step completion signals ──
+    let stepAdvanced = false
+
+    // Strategy 1: Generic explicit signals
     const completionPatterns = [
-      /✅\s*.*(complete|done|captured|finished)/i,
+      /✅\s*.*(complete|done|captured|finished|documented)/i,
       /step\s+\d+\s*(?:is\s+)?(?:complete|done|finished)/i,
       /(?:section|step)\s+(?:complete|done|finished)[.!]?\s*$/im,
       /saved.*(?:section|step).*(?:to|in)\s+/i,
+      /(?:i'?ve\s+)?(?:documented|captured|covered|completed)\s+(?:the\s+)?(?:section|step|area)\b/i,
+      /that\s+(?:covers|completes|wraps\s+up)\s+/i,
     ]
     for (const pattern of completionPatterns) {
       if (pattern.test(content)) {
         advanceWorkflowStep()
+        stepAdvanced = true
         break
       }
     }
 
-    // Deliverable completion — only match explicit artifact save confirmations
+    // Strategy 2: Agent mentions a FUTURE step by name → advance to match
+    // Detects: transition phrases ("let's move to X"), markdown headings ("## X"),
+    // bold headings ("**X**"), or the step name as a standalone line/heading.
+    if (!stepAdvanced && wf.areas && activeIdx >= 0) {
+      for (let i = activeIdx + 1; i < wf.areas.length; i++) {
+        const areaName = wf.areas[i]
+        const escaped = areaName.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")
+        const patterns = [
+          // Transition phrase: "let's move to Component Design" / "now: API design"
+          new RegExp(`(?:move|moving|proceed|next|now|let'?s|on\\s+to)\\b[^.]{0,40}\\b${escaped}\\b`, "i"),
+          // Markdown heading: ## Component Design or ### Component Design
+          new RegExp(`^#{1,4}\\s+(?:\\d+\\.?\\s*)?${escaped}\\s*$`, "im"),
+          // Bold heading: **Component Design** at start of line
+          new RegExp(`^\\*\\*(?:\\d+\\.?\\s*)?${escaped}\\*\\*`, "im"),
+          // Step N: Area Name pattern
+          new RegExp(`(?:step|section|area)\\s+\\d+[.:]+\\s*${escaped}`, "i"),
+        ]
+        for (const pattern of patterns) {
+          if (pattern.test(content)) {
+            const stepsToAdvance = i - activeIdx
+            for (let s = 0; s < stepsToAdvance; s++) {
+              advanceWorkflowStep()
+            }
+            stepAdvanced = true
+            break
+          }
+        }
+        if (stepAdvanced) break
+      }
+    }
+
+    // ── Deliverable completion signals ──
     const workflowDonePatterns = [
       /saved.*(?:to|in|at)\s+[`"']?artifacts?\//i,
       /(?:written|saved|created)\s+(?:to|at)\s+[`"']?artifacts?\//i,
       /(?:workflow|deliverable)\s+(?:is\s+)?(?:completed?|finished?|done)[.!]?\s*$/im,
       /all\s+(?:sections?|steps?)\s+(?:are\s+)?(?:completed?|done|finished)[.!]?\s*$/im,
+      /(?:architecture|document|artifact)\s+(?:is\s+)?(?:finalized?|completed?|ready)/i,
     ]
     for (const pattern of workflowDonePatterns) {
       if (pattern.test(content)) {
@@ -291,7 +337,7 @@ export function OrchestrationWorkspace({ project, onProjectUpdate }: Orchestrati
         break
       }
     }
-  }, [advanceWorkflowStep, markDeliverableComplete])
+  }, [project, advanceWorkflowStep, markDeliverableComplete])
 
   // Current deliverable
   const currentDeliverable = project.deliverables.find(d => d.id === project.currentDeliverable)
@@ -410,39 +456,63 @@ export function OrchestrationWorkspace({ project, onProjectUpdate }: Orchestrati
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [currentDeliverable?.sessionId, currentDeliverable?.workflowId])
 
-  // Fetch project-level docs from VPS
+  // Fetch project docs from VPS — root-level .md + artifact .md files
   const [projectFiles, setProjectFiles] = useState<string[]>([])
+  const [artifactFiles, setArtifactFiles] = useState<string[]>([])
   useEffect(() => {
     const projectSlug = slugify(project.name)
     if (!projectSlug) return
-    // List root-level .md files + transcript files
-    fetch(`/api/artifacts`, {
-      method: "POST",
-      headers: authHeaders({ "Content-Type": "application/json" }),
-      body: JSON.stringify({ project: projectSlug, rootOnly: true }),
-    })
-      .then(r => r.json())
-      .then(data => { if (data.files) setProjectFiles(data.files) })
-      .catch(() => {})
+    // Poll every 30s to pick up new transcripts/memory/artifacts
+    const fetchFiles = () => {
+      // Root-level .md (transcripts, memory, context)
+      fetch(`/api/artifacts`, {
+        method: "POST",
+        headers: authHeaders({ "Content-Type": "application/json" }),
+        body: JSON.stringify({ project: projectSlug, rootOnly: true }),
+      })
+        .then(r => r.json())
+        .then(data => { if (data.files) setProjectFiles(data.files) })
+        .catch(() => {})
+      // Artifact .md files (planning, qa, implementation, etc.)
+      fetch(`/api/artifacts`, {
+        method: "POST",
+        headers: authHeaders({ "Content-Type": "application/json" }),
+        body: JSON.stringify({ project: projectSlug }),
+      })
+        .then(r => r.json())
+        .then(data => { if (data.files) setArtifactFiles(data.files) })
+        .catch(() => {})
+    }
+    fetchFiles()
+    const interval = setInterval(fetchFiles, 30_000)
+    return () => clearInterval(interval)
   }, [project.name])
 
-  // Pretty names for project-level files
-  const friendlyName = (filename: string): string => {
-    if (filename === "PROJECT-CONTEXT.md") return "Project Context"
-    if (filename === "PROJECT-DECISIONS.md") return "Project Decisions"
-    const transcriptMatch = filename.match(/^WORKFLOW-TRANSCRIPT-(.+)\.md$/)
+  // Pretty names for discovered files
+  const friendlyName = (filepath: string): string => {
+    // Root-level files
+    if (filepath === "PROJECT-CONTEXT.md") return "Project Context"
+    if (filepath === "PROJECT-DECISIONS.md") return "Project Decisions"
+    const transcriptMatch = filepath.match(/^WORKFLOW-TRANSCRIPT-(.+)\.md$/)
     if (transcriptMatch) {
       const wf = transcriptMatch[1].replace(/-/g, " ").replace(/\b\w/g, c => c.toUpperCase())
       return `Transcript: ${wf}`
     }
-    return filename.replace(/\.md$/, "").replace(/-/g, " ")
+    const memoryMatch = filepath.match(/^MEMORY-(.+)\.md$/)
+    if (memoryMatch) {
+      const agent = memoryMatch[1].replace(/-/g, " ").replace(/\b\w/g, c => c.toUpperCase())
+      return `Memory: ${agent}`
+    }
+    // Artifact files — extract filename, prettify
+    const basename = filepath.split("/").pop() || filepath
+    return basename.replace(/\.md$/, "").replace(/-/g, " ").replace(/\b\w/g, c => c.toUpperCase())
   }
 
-  // Derive documents from deliverables + discovered project files
+  // Derive documents from discovered VPS files (root + artifacts)
   useEffect(() => {
-    // Project-level docs discovered from VPS
+    // Project-level docs (root .md files)
     const projectDocs: DocumentItem[] = projectFiles
-      .filter(f => !f.includes("/")) // root-level files only
+      .filter(f => !f.includes("/"))
       .filter(f => f.endsWith(".md"))
       .map(f => ({
         id: `proj-${f}`,
@@ -452,18 +522,28 @@ export function OrchestrationWorkspace({ project, onProjectUpdate }: Orchestrati
         kind: "project" as const,
       }))
 
-    // Deliverable artifact documents — show all regardless of which chat is active
-    const deliverableDocs: DocumentItem[] = project.deliverables
-      .filter((d) => d.status === "complete" || d.status === "validated" || d.status === "in-progress")
-      .map((d) => ({
-        id: `doc-${d.id}`,
-        name: d.outputPath ?? `${d.type}.md`,
-        status: (d.status === "in-progress" ? "generating" : "ready") as "generating" | "ready",
-        path: d.outputPath,
+    // Artifact docs discovered from VPS (all .md under artifacts/)
+    const artifactDocs: DocumentItem[] = artifactFiles
+      .filter(f => f.endsWith(".md"))
+      .map(f => ({
+        id: `art-${f}`,
+        name: friendlyName(f),
+        status: "ready" as const,
+        path: f,
+        kind: "deliverable" as const,
       }))
 
-    setDocuments([...projectDocs, ...deliverableDocs])
-  }, [project.deliverables, projectFiles])
+    // Deliverable docs for in-progress workflows (still generating)
+    const generatingDocs: DocumentItem[] = project.deliverables
+      .filter((d) => d.status === "in-progress")
+      .map((d) => ({
+        id: `doc-${d.id}`,
+        name: `${d.name.toLowerCase().replace(/\s+/g, "-")}.md`,
+        status: "generating" as const,
+      }))
+
+    setDocuments([...projectDocs, ...artifactDocs, ...generatingDocs])
+  }, [project.deliverables, projectFiles, artifactFiles])
 
   // Fetch document content from VPS when opening a document
   useEffect(() => {
@@ -476,9 +556,9 @@ export function OrchestrationWorkspace({ project, onProjectUpdate }: Orchestrati
     setDocumentLoading(true)
     setDocumentContent("Loading document from VPS...")
 
-    // Project-level docs use path=, deliverable docs use type=
+    // Docs with a path use direct path fetch; generating docs fall back to deliverable type lookup
     let url: string
-    if (viewingDocument.kind === "project" && viewingDocument.path) {
+    if (viewingDocument.path) {
       url = `/api/artifacts?project=${encodeURIComponent(projectSlug)}&path=${encodeURIComponent(viewingDocument.path)}`
     } else {
       const deliverableId = viewingDocument.id.replace("doc-", "")
@@ -996,6 +1076,7 @@ export function OrchestrationWorkspace({ project, onProjectUpdate }: Orchestrati
             const d = project.deliverables.find(del => del.id === id)
             if (d) setDeleteTarget(d)
           }}
+          onForceComplete={markDeliverableComplete}
         />
 
         {/* Center: Chat */}
@@ -1088,7 +1169,9 @@ export function OrchestrationWorkspace({ project, onProjectUpdate }: Orchestrati
               const url = URL.createObjectURL(blob)
               const a = document.createElement("a")
               a.href = url
-              a.download = _doc.name.endsWith(".md") ? _doc.name : `${_doc.name}.md`
+              const prefix = slugify(project.name)
+              const base = _doc.name.endsWith(".md") ? _doc.name : `${_doc.name}.md`
+              a.download = `${prefix}-${base}`
               a.click()
               URL.revokeObjectURL(url)
             }}
@@ -1127,7 +1210,8 @@ export function OrchestrationWorkspace({ project, onProjectUpdate }: Orchestrati
                 const url = URL.createObjectURL(blob)
                 const a = document.createElement("a")
                 a.href = url
-                a.download = _doc.name.replace(/\.md$/, ".docx")
+                const prefix = slugify(project.name)
+                a.download = `${prefix}-${_doc.name.replace(/\.md$/, ".docx")}`
                 a.click()
                 URL.revokeObjectURL(url)
               } catch (err) {
