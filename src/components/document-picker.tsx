@@ -151,9 +151,12 @@ export function DocumentPicker({ onConfirm, onCancel, existingTypes = [], varian
                 : "bg-muted opacity-50 cursor-not-allowed",
             )}
           >
-            <span className={cn("text-2xl mb-2", !isEnabled && "grayscale")}>
-              {deliverable.icon}
-            </span>
+            <img
+              src={`/deliverables/${deliverable.type}.png`}
+              alt=""
+              className={cn("w-20 h-20 sm:w-[100px] sm:h-[100px] mb-2 object-contain", !isEnabled && "grayscale opacity-50")}
+              onError={(e) => { (e.target as HTMLImageElement).src = "/deliverables/default.png" }}
+            />
             <span className={cn(
               "text-[13px] font-medium",
               isSelected ? "text-foreground" : "text-muted-foreground",
@@ -236,9 +239,12 @@ export function DocumentPicker({ onConfirm, onCancel, existingTypes = [], varian
                       : "bg-white shadow-sm hover:bg-[var(--brand)]/[0.03]",
                   )}
                 >
-                  <span className="text-3xl sm:text-4xl mb-3">
-                    {deliverable.icon}
-                  </span>
+                  <img
+                    src={`/deliverables/${deliverable.type}.png`}
+                    alt=""
+                    className="w-20 h-20 sm:w-[100px] sm:h-[100px] mb-3 object-contain"
+                    onError={(e) => { (e.target as HTMLImageElement).src = "/deliverables/default.png" }}
+                  />
                   <span className={cn(
                     "text-sm font-medium transition-colors duration-200",
                     isSelected

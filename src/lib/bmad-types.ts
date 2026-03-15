@@ -75,17 +75,21 @@ export type Artifact = {
 export type DeliverableType =
   // Analysis
   | "product-brief"
+  | "process-flow"
   | "domain-research"
   | "market-research"
   | "technical-research"
   // Planning
   | "prd"
+  | "user-journey-flow"
+  | "product-process-flow"
   | "prototype"
   | "edit-prd"
   | "validate-prd"
   | "ux-design"
   // Solutioning
   | "architecture"
+  | "data-flow"
   | "epics-stories"
   | "implementation-readiness"
   // Implementation
@@ -121,7 +125,7 @@ export type Deliverable = {
   workflowId: string // Links to BmadWorkflow
   name: string
   description: string
-  status: "queued" | "in-progress" | "complete" | "validated"
+  status: "queued" | "in-progress" | "complete" | "reviewing" | "awaiting-approval" | "revising" | "validated"
   progress: number // 0-100
   tasks: DeliverableTask[]
   sessionId?: string // Per-deliverable OpenClaw session (each has its own 200k context)
@@ -165,6 +169,16 @@ export const AVAILABLE_DELIVERABLES: Array<{
     icon: "📋",
   },
   {
+    type: "process-flow",
+    workflowId: "create-process-flow",
+    name: "Process Flow Diagram",
+    description: "Business process flow — current vs proposed workflow with the product",
+    estimatedTime: "5 min",
+    outputType: "Mermaid diagram",
+    phase: "analysis",
+    icon: "🔀",
+  },
+  {
     type: "domain-research",
     workflowId: "domain-research",
     name: "Domain Research",
@@ -205,6 +219,26 @@ export const AVAILABLE_DELIVERABLES: Array<{
     outputType: "Requirements doc",
     phase: "planning",
     icon: "📝",
+  },
+  {
+    type: "user-journey-flow",
+    workflowId: "create-user-journey-flow",
+    name: "User Journey Flow",
+    description: "User paths through the product — decisions, errors, alternate flows",
+    estimatedTime: "5 min",
+    outputType: "Mermaid diagram",
+    phase: "planning",
+    icon: "🔀",
+  },
+  {
+    type: "product-process-flow",
+    workflowId: "create-product-process-flow",
+    name: "Product Process Flow",
+    description: "Feature-level process flow — how features connect, triggers, decision trees",
+    estimatedTime: "5 min",
+    outputType: "Mermaid diagram",
+    phase: "planning",
+    icon: "🔀",
   },
   {
     type: "prototype",
@@ -257,6 +291,16 @@ export const AVAILABLE_DELIVERABLES: Array<{
     outputType: "Architecture doc",
     phase: "solutioning",
     icon: "🏗️",
+  },
+  {
+    type: "data-flow",
+    workflowId: "create-data-flow",
+    name: "Data Flow Diagram",
+    description: "System data flow — components, APIs, databases, integrations",
+    estimatedTime: "5 min",
+    outputType: "Mermaid diagram",
+    phase: "solutioning",
+    icon: "🔀",
   },
   {
     type: "epics-stories",
@@ -401,7 +445,7 @@ export const AVAILABLE_DELIVERABLES: Array<{
     description: "Create E2E tests for existing features",
     estimatedTime: "20 min",
     outputType: "Test suite",
-    phase: "utility",
+    phase: "implementation",
     icon: "🧪",
   },
 
@@ -504,6 +548,24 @@ export const BMAD_PHASES: BmadPhase[] = [
         estimatedTime: "15–25 min",
         aiDepth: "High",
         outputFormat: "Executive Brief MD",
+        impactArea: "Strategy",
+      },
+      {
+        id: "create-process-flow",
+        phaseId: "1-analysis",
+        name: "Create Process Flow",
+        description: "Generate a Mermaid process flow diagram from the product brief",
+        trigger: "PF",
+        agent: "analyst",
+        agentName: "Mary",
+        agentEmoji: "🔀",
+        stepCount: 3,
+        areas: ["Process mapping", "Flow visualization"],
+        workflowPath: `${WORKFLOW_BASE}/skills/create-process-flow/SKILL.md`,
+        outputArtifact: "process-flow",
+        estimatedTime: "5 min",
+        aiDepth: "Medium",
+        outputFormat: "Mermaid Diagram MD",
         impactArea: "Strategy",
       },
       {
@@ -622,6 +684,42 @@ export const BMAD_PHASES: BmadPhase[] = [
         estimatedTime: "30–45 min",
         aiDepth: "High",
         outputFormat: "PRD Document MD",
+        impactArea: "Product",
+      },
+      {
+        id: "create-user-journey-flow",
+        phaseId: "2-planning",
+        name: "Create User Journey Flow",
+        description: "User paths through the product from PRD requirements",
+        trigger: "UJ",
+        agent: "pm",
+        agentName: "John",
+        agentEmoji: "🔀",
+        stepCount: 3,
+        areas: ["User journeys", "Flow visualization"],
+        workflowPath: `${WORKFLOW_BASE}/skills/create-process-flow/SKILL.md`,
+        outputArtifact: "user-journey-flow",
+        estimatedTime: "5 min",
+        aiDepth: "Medium",
+        outputFormat: "Mermaid Diagram MD",
+        impactArea: "Product",
+      },
+      {
+        id: "create-product-process-flow",
+        phaseId: "2-planning",
+        name: "Create Product Process Flow",
+        description: "Feature-level process flow from PRD — how features connect, triggers, decisions",
+        trigger: "PP",
+        agent: "pm",
+        agentName: "John",
+        agentEmoji: "🔀",
+        stepCount: 3,
+        areas: ["Process mapping", "Feature flow"],
+        workflowPath: `${WORKFLOW_BASE}/skills/create-process-flow/SKILL.md`,
+        outputArtifact: "product-process-flow",
+        estimatedTime: "5 min",
+        aiDepth: "Medium",
+        outputFormat: "Mermaid Diagram MD",
         impactArea: "Product",
       },
       {
@@ -774,6 +872,24 @@ export const BMAD_PHASES: BmadPhase[] = [
         estimatedTime: "25–40 min",
         aiDepth: "High",
         outputFormat: "Architecture MD",
+        impactArea: "Technical",
+      },
+      {
+        id: "create-data-flow",
+        phaseId: "3-solutioning",
+        name: "Create Data Flow Diagram",
+        description: "System data flow — components, APIs, databases, integrations",
+        trigger: "DF",
+        agent: "architect",
+        agentName: "Winston",
+        agentEmoji: "🔀",
+        stepCount: 3,
+        areas: ["Data flow", "System visualization"],
+        workflowPath: `${WORKFLOW_BASE}/skills/create-process-flow/SKILL.md`,
+        outputArtifact: "data-flow",
+        estimatedTime: "5 min",
+        aiDepth: "Medium",
+        outputFormat: "Mermaid Diagram MD",
         impactArea: "Technical",
       },
       {
