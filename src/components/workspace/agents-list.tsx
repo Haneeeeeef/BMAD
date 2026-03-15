@@ -200,7 +200,7 @@ export function AgentsList({ agents, activeAgentId, contextMap, onAgentClick }: 
         <div className="flex items-center px-2.5 pb-2">
           <span className="text-[11px] font-semibold uppercase tracking-wider text-muted-foreground">Agents</span>
         </div>
-        {agents.map((agent) => (
+        {[...agents].sort((a, b) => a.id === "jarvis" ? 1 : b.id === "jarvis" ? -1 : 0).map((agent) => (
           <AgentRow
             key={agent.id}
             agent={agent}
