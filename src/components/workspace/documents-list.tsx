@@ -9,7 +9,6 @@ export type DocumentItem = {
   name: string
   status: "ready" | "generating" | "error"
   path?: string
-  /** "deliverable" (default) | "project" for project-level docs */
   kind?: "deliverable" | "project"
 }
 
@@ -17,13 +16,47 @@ interface DocumentsListProps {
   documents: DocumentItem[]
   onView?: (doc: DocumentItem) => void
   onDownload?: (doc: DocumentItem) => void
-  onMarkComplete?: (doc: DocumentItem) => void
+  onMarkComplete?: () => void
 }
 
-const DOT_COLOR: Record<DocumentItem["status"], string> = {
-  ready: "bg-emerald-500",
-  generating: "bg-amber-500",
-  error: "bg-red-500",
+const NAME_TO_ICON: Record<string, string> = {
+  "product brief": "product-brief",
+  "architecture": "architecture",
+  "prd": "prd",
+  "ux design": "ux-design",
+  "epics": "epics-stories",
+  "stories": "epics-stories",
+  "generate tests": "qa-tests",
+  "test cases": "qa-tests",
+  "test data": "qa-tests",
+  "test plan": "qa-tests",
+  "test scenarios": "qa-tests",
+  "sprint": "sprint-planning",
+  "code review": "code-review",
+  "quick spec": "quick-spec",
+  "documentation": "document-project",
+  "process flow": "process-flow",
+  "data flow": "data-flow",
+}
+
+function nameToIcon(name: string): string {
+  const lower = name.toLowerCase()
+  for (const [key, icon] of Object.entries(NAME_TO_ICON)) {
+    if (lower.includes(key)) return icon
+  }
+  return "default"
+}
+
+const STATUS_BADGE: Record<DocumentItem["status"], { text: string; bg: string }> = {
+  ready: { text: "text-emerald-700", bg: "bg-emerald-50" },
+  generating: { text: "text-amber-700", bg: "bg-amber-50" },
+  error: { text: "text-red-700", bg: "bg-red-50" },
+}
+
+const STATUS_LABEL: Record<DocumentItem["status"], string> = {
+  ready: "Ready",
+  generating: "Generating",
+  error: "Error",
 }
 
 function DocRow({ doc, onView, onDownload, onMarkComplete }: {
@@ -32,24 +65,28 @@ function DocRow({ doc, onView, onDownload, onMarkComplete }: {
   onDownload?: (doc: DocumentItem) => void
   onMarkComplete?: (doc: DocumentItem) => void
 }) {
+  const badge = STATUS_BADGE[doc.status]
+
   return (
     <button
       onClick={() => onView?.(doc)}
       className={cn(
-        "flex items-center gap-1.5 rounded-md py-1.5 px-2 text-left transition-colors",
-        "bg-muted border border-border hover:bg-accent",
+        "group flex items-center gap-2.5 px-2.5 py-2 rounded-lg text-left transition-all cursor-pointer",
+        "bg-white/40 hover:bg-white/60",
       )}
     >
-      <span
-        className={cn(
-          "inline-block h-[5px] w-[5px] rounded-full shrink-0",
-          DOT_COLOR[doc.status],
-          doc.status === "generating" && "animate-pulse",
-        )}
-      />
-      <span className="text-[11px] font-medium text-foreground flex-1 truncate">
+      {/* Status bar */}
+      <div className={cn(
+        "shrink-0 w-[3px] h-4 rounded-full",
+        doc.status === "ready" ? "bg-emerald-500/40" : doc.status === "generating" ? "bg-amber-500 animate-pulse" : "bg-red-500",
+      )} />
+
+      {/* Name */}
+      <span className="text-[13px] font-medium text-foreground/80 flex-1 truncate">
         {doc.name}
       </span>
+
+      {/* Actions */}
       <div className="flex items-center gap-1 shrink-0">
         {doc.status === "ready" && onDownload && (
           <span
@@ -57,10 +94,10 @@ function DocRow({ doc, onView, onDownload, onMarkComplete }: {
             tabIndex={0}
             onClick={(e) => { e.stopPropagation(); onDownload(doc) }}
             onKeyDown={(e) => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); e.stopPropagation(); onDownload(doc) } }}
-            className="rounded px-1.5 py-0.5 bg-muted text-muted-foreground hover:bg-accent transition-colors"
+            className="p-1 rounded-md text-muted-foreground/30 hover:text-foreground opacity-0 group-hover:opacity-100 transition-all"
             aria-label={`Download ${doc.name}`}
           >
-            <Download className="h-2.5 w-2.5" />
+            <Download className="h-3 w-3" />
           </span>
         )}
         {doc.status === "generating" && onMarkComplete && (
@@ -69,17 +106,21 @@ function DocRow({ doc, onView, onDownload, onMarkComplete }: {
             tabIndex={0}
             onClick={(e) => { e.stopPropagation(); onMarkComplete(doc) }}
             onKeyDown={(e) => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); e.stopPropagation(); onMarkComplete(doc) } }}
-            className="text-[10px] text-amber-500 hover:text-emerald-500 cursor-pointer transition-colors"
+            className={cn("w-[68px] text-center shrink-0 rounded py-0.5 text-[10px] font-semibold cursor-pointer transition-opacity hover:opacity-70", badge.text, badge.bg)}
             title="Click to mark as complete"
           >
-            Generating...
+            {STATUS_LABEL[doc.status]}
           </span>
         )}
         {doc.status === "generating" && !onMarkComplete && (
-          <span className="text-[10px] text-amber-500">Generating...</span>
+          <span className={cn("w-[68px] text-center shrink-0 rounded py-0.5 text-[10px] font-semibold", badge.text, badge.bg)}>
+            {STATUS_LABEL[doc.status]}
+          </span>
         )}
         {doc.status === "error" && (
-          <span className="text-[10px] text-red-500">Error</span>
+          <span className={cn("w-[68px] text-center shrink-0 rounded py-0.5 text-[10px] font-semibold", badge.text, badge.bg)}>
+            {STATUS_LABEL[doc.status]}
+          </span>
         )}
       </div>
     </button>
@@ -93,59 +134,55 @@ export function DocumentsList({ documents, onView, onDownload, onMarkComplete }:
   const activeDocs = tab === "project" ? projectDocs : artifactDocs
 
   return (
-    <div className="flex flex-col flex-1 min-h-0 border-t border-border">
+    <div className="flex flex-col flex-1 min-h-0">
       {/* Section heading */}
-      <div className="flex items-center justify-between px-4 py-2.5 border-b border-border shrink-0">
-        <span className="text-[11px] font-medium uppercase tracking-wider text-muted-foreground">
+      <div className="flex items-center justify-between px-4 pt-4 pb-2 border-t border-border shrink-0">
+        <span className="text-[11px] font-semibold uppercase tracking-wider text-muted-foreground">
           Documents
-        </span>
-        <span className="text-[10px] text-muted-foreground font-mono bg-muted px-1.5 py-0.5 rounded">
-          {documents.filter(d => d.status === "ready").length}/{documents.length}
         </span>
       </div>
 
-      {/* Pill tabs */}
-      <div className="flex items-center gap-1.5 px-3 pt-2.5 pb-2 shrink-0">
+      {/* Segmented control */}
+      <div className="flex items-center mx-3 mb-2 p-0.5 rounded-lg bg-black/[0.04] shrink-0">
         <button
           onClick={() => setTab("artifacts")}
           className={cn(
-            "px-3 py-1 text-[11px] font-medium rounded-full transition-colors",
+            "flex-1 px-3 py-1.5 text-[11px] font-medium rounded-md text-center transition-all cursor-pointer",
             tab === "artifacts"
-              ? "bg-[var(--brand)] text-[var(--confirm-foreground)]"
-              : "bg-muted text-muted-foreground hover:bg-accent",
+              ? "bg-white shadow-sm text-foreground"
+              : "text-muted-foreground hover:text-foreground",
           )}
         >
-          Artifacts
-          {artifactDocs.length > 0 && (
-            <span className="ml-1 opacity-70">{artifactDocs.length}</span>
-          )}
+          Artifacts {artifactDocs.length > 0 && <span className="text-[9px] opacity-50">{artifactDocs.length}</span>}
         </button>
         <button
           onClick={() => setTab("project")}
           className={cn(
-            "px-3 py-1 text-[11px] font-medium rounded-full transition-colors",
+            "flex-1 px-3 py-1.5 text-[11px] font-medium rounded-md text-center transition-all cursor-pointer",
             tab === "project"
-              ? "bg-[var(--brand)] text-[var(--confirm-foreground)]"
-              : "bg-muted text-muted-foreground hover:bg-accent",
+              ? "bg-white shadow-sm text-foreground"
+              : "text-muted-foreground hover:text-foreground",
           )}
         >
-          Project
-          {projectDocs.length > 0 && (
-            <span className="ml-1 opacity-70">{projectDocs.length}</span>
-          )}
+          Project {projectDocs.length > 0 && <span className="text-[9px] opacity-50">{projectDocs.length}</span>}
         </button>
       </div>
 
-      {/* List */}
-      <div className="flex flex-col flex-1 overflow-y-auto py-1 px-2 gap-[3px]">
-        {activeDocs.length === 0 && (
-          <span className="text-[11px] text-muted-foreground/50 px-2 py-3">
-            No documents yet
-          </span>
+      {/* Document list */}
+      <div className="flex flex-col flex-1 overflow-y-auto px-3 pb-4 gap-1">
+        {activeDocs.length === 0 ? (
+          <p className="text-[11px] text-muted-foreground/40 text-center py-6 italic">No documents yet</p>
+        ) : (
+          activeDocs.map((doc) => (
+            <DocRow
+              key={doc.id}
+              doc={doc}
+              onView={onView}
+              onDownload={onDownload}
+              onMarkComplete={onMarkComplete ? () => onMarkComplete() : undefined}
+            />
+          ))
         )}
-        {activeDocs.map((doc) => (
-          <DocRow key={doc.id} doc={doc} onView={onView} onDownload={onDownload} onMarkComplete={onMarkComplete} />
-        ))}
       </div>
     </div>
   )

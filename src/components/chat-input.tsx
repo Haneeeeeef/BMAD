@@ -31,6 +31,7 @@ export interface ChatAttachment {
   status: "pending" | "extracting" | "done" | "error"
   extracted?: ExtractedFile
   error?: string
+  previewUrl?: string  // data URL for image preview
 }
 
 /* ── Props ──────────────────────────────────────────────── */
@@ -195,6 +196,17 @@ export const ChatInput = React.forwardRef<ChatInputHandle, ChatInputProps>(
             file,
             name: file.name,
             status: isImage ? "done" : "pending",
+          }
+          // Generate preview URL for images
+          if (isImage) {
+            const reader = new FileReader()
+            reader.onload = (e) => {
+              const url = e.target?.result as string
+              setWsAttachments(prev =>
+                prev.map(a => a.id === attachment.id ? { ...a, previewUrl: url } : a)
+              )
+            }
+            reader.readAsDataURL(file)
           }
           newAttachments.push(attachment)
         }
@@ -399,42 +411,61 @@ export const ChatInput = React.forwardRef<ChatInputHandle, ChatInputProps>(
               onDragLeave={handleDragLeave}
               onDrop={handleDrop}
             >
-              {/* File pills */}
+              {/* File pills + image previews */}
               {wsAttachments.length > 0 && (
                 <div className="flex flex-wrap gap-1.5 px-3 pt-2.5 pb-1">
-                  {wsAttachments.map(a => (
-                    <div
-                      key={a.id}
-                      className={cn(
-                        "flex items-center gap-1.5 px-2.5 py-1 rounded-lg text-[12px] max-w-[200px]",
-                        a.status === "error"
-                          ? "bg-red-100 text-red-700"
-                          : a.status === "done"
-                            ? "bg-muted text-foreground"
-                            : "bg-muted text-muted-foreground",
-                      )}
-                    >
-                      <span className="truncate">{a.name}</span>
-                      {a.status === "extracting" && (
-                        <span className="text-[10px] text-muted-foreground shrink-0">...</span>
-                      )}
-                      {a.status === "done" && (
-                        <span className="text-[10px] text-emerald-600 shrink-0">&#10003;</span>
-                      )}
-                      <button
-                        onClick={() => removeWsAttachment(a.id)}
-                        className="shrink-0 p-0.5 hover:bg-border rounded transition-colors"
-                        aria-label={`Remove ${a.name}`}
+                  {wsAttachments.map(a => {
+                    const isImage = a.file.type.startsWith("image/")
+                    return isImage && a.previewUrl ? (
+                      <div key={a.id} className="relative group">
+                        <img
+                          src={a.previewUrl}
+                          alt={a.name}
+                          className="h-16 w-16 rounded-lg border object-cover cursor-pointer hover:opacity-90 transition-opacity"
+                          onClick={() => window.open(a.previewUrl, "_blank")}
+                        />
+                        <button
+                          onClick={() => removeWsAttachment(a.id)}
+                          className="absolute -top-1.5 -right-1.5 p-0.5 bg-background border rounded-full opacity-0 group-hover:opacity-100 transition-opacity shadow-sm"
+                          aria-label={`Remove ${a.name}`}
+                        >
+                          <X className="h-3 w-3" />
+                        </button>
+                      </div>
+                    ) : (
+                      <div
+                        key={a.id}
+                        className={cn(
+                          "flex items-center gap-1.5 px-2.5 py-1 rounded-lg text-[12px] max-w-[200px]",
+                          a.status === "error"
+                            ? "bg-red-100 text-red-700"
+                            : a.status === "done"
+                              ? "bg-muted text-foreground"
+                              : "bg-muted text-muted-foreground",
+                        )}
                       >
-                        <X className="h-3 w-3" />
-                      </button>
-                    </div>
-                  ))}
+                        <span className="truncate">{a.name}</span>
+                        {a.status === "extracting" && (
+                          <span className="text-[10px] text-muted-foreground shrink-0">...</span>
+                        )}
+                        {a.status === "done" && (
+                          <span className="text-[10px] text-emerald-600 shrink-0">&#10003;</span>
+                        )}
+                        <button
+                          onClick={() => removeWsAttachment(a.id)}
+                          className="shrink-0 p-0.5 hover:bg-border rounded transition-colors"
+                          aria-label={`Remove ${a.name}`}
+                        >
+                          <X className="h-3 w-3" />
+                        </button>
+                      </div>
+                    )
+                  })}
                 </div>
               )}
 
               {/* Textarea row */}
-              <div className="flex items-end gap-1.5 px-3 py-2">
+              <div className="flex items-center gap-1.5 px-3 py-2">
                 {/* Paperclip */}
                 <button
                   type="button"
@@ -468,7 +499,7 @@ export const ChatInput = React.forwardRef<ChatInputHandle, ChatInputProps>(
                   aria-label="Chat message"
                   rows={1}
                   className={cn(
-                    "flex-1 bg-transparent text-[15px] leading-8 text-foreground placeholder:text-muted-foreground",
+                    "flex-1 bg-transparent text-[15px] leading-[24px] text-foreground placeholder:text-muted-foreground",
                     "outline-none resize-none max-h-[128px]",
                     disabled && "cursor-not-allowed",
                   )}

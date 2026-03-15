@@ -2,35 +2,35 @@ import { NextRequest, NextResponse } from "next/server"
 import { requireAuth } from "@/lib/auth"
 import * as vps from "@/lib/vps"
 
-// Deliverable type -> artifact file path mapping
+// Deliverable type -> file path mapping (flat under deliverables/)
 const ARTIFACT_PATHS: Record<string, string> = {
-  "product-brief": "artifacts/planning/product-brief.md",
-  "domain-research": "artifacts/planning/domain-research.md",
-  "market-research": "artifacts/planning/market-research.md",
-  "technical-research": "artifacts/planning/technical-research.md",
-  prd: "artifacts/planning/prd.md",
-  "edit-prd": "artifacts/planning/prd.md",
-  "validate-prd": "artifacts/planning/prd-validation.md",
-  prototype: "artifacts/planning/prototype.md",
-  "ux-design": "artifacts/planning/ux-design.md",
-  architecture: "artifacts/planning/architecture.md",
-  "epics-stories": "artifacts/planning/epics.md",
-  "implementation-readiness": "artifacts/planning/implementation-readiness.md",
-  "sprint-planning": "artifacts/implementation/sprint-plan.md",
-  "create-story": "artifacts/implementation/story.md",
-  "dev-story": "artifacts/code/dev-story.md",
-  "code-review": "artifacts/code/code-review.md",
-  "correct-course": "artifacts/planning/course-correction.md",
-  retrospective: "artifacts/implementation/retrospective.md",
-  "sprint-status": "artifacts/implementation/sprint-status.md",
-  "quick-spec": "artifacts/architecture/quick-spec.md",
-  "quick-dev": "artifacts/code/quick-dev.md",
+  "product-brief": "deliverables/product-brief.md",
+  "domain-research": "research/domain-research.md",
+  "market-research": "research/market-research.md",
+  "technical-research": "research/technical-research.md",
+  prd: "deliverables/prd.md",
+  "edit-prd": "deliverables/prd.md",
+  "validate-prd": "deliverables/prd-validation.md",
+  prototype: "deliverables/prototype.md",
+  "ux-design": "deliverables/ux-design.md",
+  architecture: "deliverables/architecture.md",
+  "epics-stories": "deliverables/epics.md",
+  "implementation-readiness": "deliverables/implementation-readiness.md",
+  "sprint-planning": "deliverables/sprint-plan.md",
+  "create-story": "deliverables/story.md",
+  "dev-story": "deliverables/dev-story.md",
+  "code-review": "deliverables/code-review.md",
+  "correct-course": "deliverables/course-correction.md",
+  retrospective: "deliverables/retrospective.md",
+  "sprint-status": "deliverables/sprint-status.md",
+  "quick-spec": "deliverables/quick-spec.md",
+  "quick-dev": "deliverables/quick-dev.md",
   "generate-context": "PROJECT-CONTEXT.md",
   "project-decisions": "PROJECT-DECISIONS.md",
-  "document-project": "artifacts/docs/project-docs.md",
-  "qa-tests": "artifacts/qa/test-plan.md",
-  brainstorming: "artifacts/planning/brainstorm.md",
-  "advanced-elicitation": "artifacts/planning/elicitation.md",
+  "document-project": "deliverables/project-docs.md",
+  "qa-tests": "deliverables/qa/test-plan.md",
+  brainstorming: "deliverables/brainstorm.md",
+  "advanced-elicitation": "deliverables/elicitation.md",
 }
 
 /**
@@ -75,8 +75,10 @@ export async function GET(request: NextRequest) {
     try {
       content = await vps.readFile(projectSlug, relPath)
     } catch {
-      // Try legacy path
-      const legacyPath = relPath.replace("artifacts/planning/", "planning-artifacts/")
+      // Try legacy paths for backward compatibility
+      const legacyPath = relPath
+        .replace("deliverables/", "artifacts/planning/")
+        .replace("research/", "artifacts/planning/")
       content = await vps.readFile(projectSlug, legacyPath)
     }
 
@@ -113,14 +115,38 @@ export async function POST(request: NextRequest) {
       // Root-level .md files only
       files = await vps.listFiles(project, "", { filesOnly: true, pattern: /\.md$/ })
     } else {
-      // Artifact + legacy dirs
-      const artifactFiles = await vps.findFiles(project, "artifacts", { pattern: /\.md$/ }).catch(() => [] as string[])
-      const legacyFiles = await vps.findFiles(project, "planning-artifacts", { pattern: /\.md$/ }).catch(() => [] as string[])
-      files = [...artifactFiles, ...legacyFiles]
+      // deliverables/ + research/ + legacy dirs
+      const deliverableFiles = await vps.findFiles(project, "deliverables", { pattern: /\.(md|drawio)$/ }).catch(() => [] as string[])
+      const researchFiles = await vps.findFiles(project, "research", { pattern: /\.md$/ }).catch(() => [] as string[])
+      const legacyFiles = await vps.findFiles(project, "artifacts", { pattern: /\.md$/ }).catch(() => [] as string[])
+      files = [...deliverableFiles, ...researchFiles, ...legacyFiles]
     }
 
     return NextResponse.json({ files })
   } catch {
     return NextResponse.json({ error: "Failed to list artifacts" }, { status: 500 })
+  }
+}
+
+// PUT /api/artifacts — save file content back to VPS
+export async function PUT(request: NextRequest) {
+  const authPut = requireAuth(request)
+  if (authPut instanceof Response) return authPut
+
+  try {
+    const { project, path: filePath, content } = await request.json()
+    if (!project || !filePath || content === undefined) {
+      return NextResponse.json({ error: "project, path, and content required" }, { status: 400 })
+    }
+
+    if (!vps.validateSlug(project)) {
+      return NextResponse.json({ error: "Invalid project slug" }, { status: 400 })
+    }
+
+    await vps.writeFile(project, filePath, content)
+    return NextResponse.json({ success: true })
+  } catch (error) {
+    console.error("[artifacts] PUT error:", error)
+    return NextResponse.json({ error: "Failed to save file" }, { status: 500 })
   }
 }

@@ -94,11 +94,23 @@ export default function ChatPage() {
   }, [session])
 
   // ---------------------------------------------------------------------------
-  // Auto-scroll during streaming (unless user scrolled up)
+  // Auto-scroll during streaming — debounced to avoid excessive scroll recalcs
   // ---------------------------------------------------------------------------
+  const scrollRAF = useRef(0)
   useEffect(() => {
-    if (chat.isLoading && chat.shouldAutoScroll) {
+    if (!chat.isLoading || !chat.shouldAutoScroll) return
+
+    if (scrollRAF.current) cancelAnimationFrame(scrollRAF.current)
+    scrollRAF.current = requestAnimationFrame(() => {
+      scrollRAF.current = 0
       messagesEndRef.current?.scrollIntoView({ behavior: "smooth" })
+    })
+
+    return () => {
+      if (scrollRAF.current) {
+        cancelAnimationFrame(scrollRAF.current)
+        scrollRAF.current = 0
+      }
     }
   }, [chat.messages, chat.isLoading, chat.shouldAutoScroll])
 

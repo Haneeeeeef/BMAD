@@ -7,15 +7,10 @@ import remarkGfm from "remark-gfm"
 import { cn } from "@/lib/utils"
 import { CanvasStatus } from "@/lib/canvas-types"
 import { CanvasStatusBadge } from "./canvas-status-badge"
-import { Check, Copy, FileDown, X, FileText, GitBranch, Image, FileType, Pencil, LayoutGrid, Trash2, Loader2 } from "lucide-react"
+import { Check, Copy, FileDown, X, FileText, GitBranch, Image, FileType, Trash2, Loader2 } from "lucide-react"
 
-// Lazy load heavy diagram components
-const ExcalidrawDiagram = dynamic(() => import("./excalidraw-diagram").then(m => ({ default: m.ExcalidrawDiagram })), {
-  ssr: false,
-  loading: () => <div className="h-[400px] flex items-center justify-center bg-muted/50 rounded-lg"><Loader2 className="h-6 w-6 animate-spin text-muted-foreground" /></div>,
-})
-
-const MermaidDiagram = dynamic(() => import("./mermaid-diagram").then(m => ({ default: m.MermaidDiagram })), {
+// Lazy load diagram component
+const DrawioDiagram = dynamic(() => import("./drawio-diagram").then(m => ({ default: m.DrawioDiagram })), {
   ssr: false,
   loading: () => <div className="h-[400px] flex items-center justify-center bg-muted/50 rounded-lg"><Loader2 className="h-6 w-6 animate-spin text-muted-foreground" /></div>,
 })
@@ -73,13 +68,7 @@ export function DiscoveryCanvas({
   const totalVersions = activeDoc?.versions?.length || 1
   const isLatestVersion = currentVersion?.version === latestVersionNum
 
-  // Diagram render mode: "excalidraw" (hand-drawn) or "mermaid" (structured)
-  const [diagramMode, setDiagramMode] = React.useState<"excalidraw" | "mermaid">("excalidraw")
   const isDiagram = activeDoc ? isDiagramType(activeDoc.type) : false
-
-  // Memoized handlers for diagram mode toggle
-  const handleSetExcalidraw = React.useCallback(() => setDiagramMode("excalidraw"), [])
-  const handleSetMermaid = React.useCallback(() => setDiagramMode("mermaid"), [])
 
   // Memoize markdown components to prevent diagram re-renders on scroll/type
   const markdownComponents = React.useMemo(() => ({
@@ -113,46 +102,12 @@ export function DiscoveryCanvas({
       const lang = match ? match[1] : ""
       const codeString = String(children).replace(/\n$/, "")
 
-      // Render mermaid diagrams - toggle between Excalidraw and Mermaid
+      // Render mermaid/drawio diagrams via draw.io
       if (lang === "mermaid") {
-        return (
-          <div className="relative my-4">
-            {/* Diagram mode toggle overlay */}
-            <div className="absolute -top-3 left-0 z-10 flex items-center border rounded-md overflow-hidden text-xs bg-background/80 backdrop-blur-sm shadow-sm">
-              <button
-                onClick={handleSetExcalidraw}
-                className={cn(
-                  "flex items-center gap-1 px-2 py-1 transition-colors",
-                  diagramMode === "excalidraw"
-                    ? "bg-primary text-primary-foreground"
-                    : "hover:bg-muted text-muted-foreground"
-                )}
-                aria-label="Hand-drawn style"
-              >
-                <Pencil className="h-3 w-3" />
-                <span>Sketch</span>
-              </button>
-              <button
-                onClick={handleSetMermaid}
-                className={cn(
-                  "flex items-center gap-1 px-2 py-1 transition-colors",
-                  diagramMode === "mermaid"
-                    ? "bg-primary text-primary-foreground"
-                    : "hover:bg-muted text-muted-foreground"
-                )}
-                aria-label="Structured style"
-              >
-                <LayoutGrid className="h-3 w-3" />
-                <span>Mermaid</span>
-              </button>
-            </div>
-            {/* Diagram */}
-            {diagramMode === "excalidraw"
-              ? <ExcalidrawDiagram chart={codeString} className="" />
-              : <MermaidDiagram chart={codeString} className="p-4 bg-muted/30 rounded-lg" />
-            }
-          </div>
-        )
+        return <DrawioDiagram chart={codeString} className="my-4" />
+      }
+      if (lang === "drawio") {
+        return <DrawioDiagram xml={codeString} className="my-4" />
       }
 
       // Inline code
@@ -170,7 +125,7 @@ export function DiscoveryCanvas({
     pre: ({ children }: { children?: React.ReactNode }) => (
       <pre className="bg-muted p-4 rounded-lg overflow-x-auto mb-4 text-sm">{children}</pre>
     ),
-  }), [diagramMode, currentVersion?.content, handleSetExcalidraw, handleSetMermaid])
+  }), [currentVersion?.content])
 
   const handlePrevVersion = () => {
     if (!activeDoc || !onVersionChange || !currentVersion) return

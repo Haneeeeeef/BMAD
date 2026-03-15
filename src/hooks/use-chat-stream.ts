@@ -127,40 +127,55 @@ export function useChatStream({
         const reader = response.body?.getReader()
         if (!reader) throw new Error("No response body")
 
-        // --- Optimized streaming with rAF + isolated state ---
+        // --- Optimized streaming: throttled RAF + index-based splice ---
         let fullContent = ""
-        const rAFRef = { id: 0 }
+        let rAFId = 0
+        let lastFlushTime = 0
+        const FLUSH_INTERVAL = 32 // ~30fps — perceptually smooth for text
 
-        // Separate state for streaming content — avoids .map() over all messages
         const flushToState = () => {
           const displayContent = cleanStreamingXml(fullContent)
           startTransition(() => {
-            setMessages((prev) =>
-              prev.map((m) =>
-                m.id === assistantMessageId
-                  ? { ...m, content: displayContent }
-                  : m
-              )
-            )
+            setMessages((prev) => {
+              // Index-based update — skip iterating all messages
+              const lastIdx = prev.length - 1
+              if (lastIdx < 0 || prev[lastIdx].id !== assistantMessageId) {
+                // Fallback: find by id (shouldn't happen in normal flow)
+                return prev.map((m) =>
+                  m.id === assistantMessageId ? { ...m, content: displayContent } : m
+                )
+              }
+              const next = prev.slice()
+              next[lastIdx] = { ...next[lastIdx], content: displayContent }
+              return next
+            })
           })
+          lastFlushTime = performance.now()
         }
 
-        // rAF loop — syncs updates with browser paint cycle
+        // Throttled RAF — flush at most every ~32ms instead of every frame
         let needsFlush = false
         const scheduleFlush = () => {
           needsFlush = true
-          if (!rAFRef.id) {
-            const loop = () => {
-              if (needsFlush) {
-                needsFlush = false
-                flushToState()
-                rAFRef.id = requestAnimationFrame(loop)
-              } else {
-                rAFRef.id = 0
-              }
+          if (rAFId) return // already scheduled
+          rAFId = requestAnimationFrame(() => {
+            rAFId = 0
+            if (!needsFlush) return
+            const elapsed = performance.now() - lastFlushTime
+            if (elapsed >= FLUSH_INTERVAL) {
+              needsFlush = false
+              flushToState()
+            } else {
+              // Too soon — schedule next frame
+              rAFId = requestAnimationFrame(() => {
+                rAFId = 0
+                if (needsFlush) {
+                  needsFlush = false
+                  flushToState()
+                }
+              })
             }
-            rAFRef.id = requestAnimationFrame(loop)
-          }
+          })
         }
 
         await parseSSEStream(reader, {
@@ -171,7 +186,7 @@ export function useChatStream({
         })
 
         // Cancel any pending rAF and do a final flush
-        if (rAFRef.id) cancelAnimationFrame(rAFRef.id)
+        if (rAFId) cancelAnimationFrame(rAFId)
         flushToState()
 
         // Check for canvas content in response (XML artifact tags)

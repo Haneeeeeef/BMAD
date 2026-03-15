@@ -20,6 +20,8 @@ export interface Message {
   content: string
   reasoning?: string  // Kimi K2.5 reasoning/thinking content
   attachments?: Attachment[]
+  agentId?: string    // Which agent generated this response
+  agentName?: string  // Display name of the agent
   createdAt: number
 }
 

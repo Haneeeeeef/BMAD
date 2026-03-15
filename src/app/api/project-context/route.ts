@@ -20,16 +20,16 @@ const CONTEXT_FILES = [
 ]
 
 const ARTIFACT_FILES = [
-  { path: "artifacts/planning/product-brief.md", label: "Product brief" },
-  { path: "artifacts/planning/prd.md", label: "PRD" },
-  { path: "artifacts/planning/ux-design.md", label: "UX design spec" },
-  { path: "artifacts/planning/architecture.md", label: "Architecture spec" },
-  { path: "artifacts/planning/epics.md", label: "Epics & stories" },
-  { path: "artifacts/planning/domain-research.md", label: "Domain research" },
-  { path: "artifacts/planning/market-research.md", label: "Market research" },
-  { path: "artifacts/planning/technical-research.md", label: "Technical research" },
-  { path: "artifacts/implementation/sprint-plan.md", label: "Sprint plan" },
-  { path: "artifacts/qa/test-plan.md", label: "QA test plan" },
+  { path: "deliverables/product-brief.md", label: "Product brief" },
+  { path: "deliverables/prd.md", label: "PRD" },
+  { path: "deliverables/ux-design.md", label: "UX design spec" },
+  { path: "deliverables/architecture.md", label: "Architecture spec" },
+  { path: "deliverables/epics.md", label: "Epics & stories" },
+  { path: "research/domain-research.md", label: "Domain research" },
+  { path: "research/market-research.md", label: "Market research" },
+  { path: "research/technical-research.md", label: "Technical research" },
+  { path: "deliverables/sprint-plan.md", label: "Sprint plan" },
+  { path: "deliverables/qa/test-plan.md", label: "QA test plan" },
 ]
 
 async function fileExists(slug: string, path: string): Promise<boolean> {

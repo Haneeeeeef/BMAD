@@ -237,7 +237,7 @@ export function ProjectWorkspace({ project, onProjectUpdate }: ProjectWorkspaceP
       const match = content.match(pattern)
       if (match) {
         const path = match[1]
-        if (path.includes("artifacts/")) {
+        if (path.includes("deliverables/") || path.includes("research/")) {
           setArtifactPaths(prev => {
             const updated = { ...prev, [targetDeliverableId]: path }
             localStorage.setItem(`project-artifacts-${project.id}`, JSON.stringify(updated))
@@ -367,7 +367,7 @@ export function ProjectWorkspace({ project, onProjectUpdate }: ProjectWorkspaceP
     try {
       if (agent === "gemini") {
         // Get document content from Jarvis first
-        const documentPath = `planning-artifacts/${currentDeliverable.type}.md`
+        const documentPath = `deliverables/${currentDeliverable.type}.md`
 
         // Build chat history summary for context
         const chatHistory = messages
@@ -414,7 +414,7 @@ export function ProjectWorkspace({ project, onProjectUpdate }: ProjectWorkspaceP
         setValidationSummary(summary + ` (Reviewed by ${qaData.model})`)
       } else {
         // Jarvis delegates QA validation to qa agent via sessions_send
-        const documentPath = `planning-artifacts/${currentDeliverable.type}.md`
+        const documentPath = `deliverables/${currentDeliverable.type}.md`
         const qaInstruction = buildQASpawnInstruction(
           currentDeliverable.type,
           documentPath,

@@ -132,14 +132,13 @@ function ProgressRing({ percentage, breakdown }: { percentage: number; breakdown
           {breakdown.map((b) => {
             const barColor = b.progress === 100 ? "bg-emerald-500" : b.progress > 0 ? "bg-[var(--brand)]" : "bg-border"
             return (
-              <div key={b.phase} className="flex items-center justify-between gap-3">
-                <span className="text-[11px] text-muted-foreground">{b.label}</span>
-                <div className="flex items-center gap-2">
-                  <div className="w-12 h-1.5 rounded-full bg-muted overflow-hidden">
-                    <div className={cn("h-full rounded-full", barColor)} style={{ width: `${b.progress}%` }} />
-                  </div>
-                  <span className="font-mono text-[10px] w-7 text-right text-muted-foreground">{b.progress}%</span>
+              <div key={b.phase} className="flex items-center justify-between gap-2">
+                <span className="text-[11px] text-muted-foreground flex-1">{b.label}</span>
+                <span className="text-[9px] text-muted-foreground/40 font-mono w-6 text-right">{b.weight}%</span>
+                <div className="w-10 h-1.5 rounded-full bg-muted overflow-hidden">
+                  <div className={cn("h-full rounded-full", barColor)} style={{ width: `${b.progress}%` }} />
                 </div>
+                <span className="font-mono text-[10px] w-7 text-right text-muted-foreground">{b.progress}%</span>
               </div>
             )
           })}

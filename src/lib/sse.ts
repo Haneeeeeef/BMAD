@@ -7,6 +7,8 @@ export async function parseSSEStream(
   callbacks: {
     onContent?: (chunk: string, full: string) => void
     onReasoning?: (chunk: string, full: string) => void
+    onToolCall?: (tool: string, args: Record<string, unknown>) => void
+    onToolResult?: (tool: string, result: string) => void
     onDone?: (fullContent: string, fullReasoning: string) => void
   } = {}
 ): Promise<{ content: string; reasoning: string }> {
@@ -22,6 +24,30 @@ export async function parseSSEStream(
 
     try {
       const json = JSON.parse(data)
+
+      // Check for tool calls (sub-agent results, file operations, etc.)
+      const toolCalls = json.choices?.[0]?.delta?.tool_calls || json.tool_calls
+      if (toolCalls && Array.isArray(toolCalls)) {
+        for (const tc of toolCalls) {
+          const name = tc.function?.name || tc.name || ""
+          const args = tc.function?.arguments || tc.arguments || ""
+          if (name) {
+            try {
+              const parsed = typeof args === "string" ? JSON.parse(args) : args
+              callbacks.onToolCall?.(name, parsed)
+            } catch {
+              callbacks.onToolCall?.(name, { raw: args })
+            }
+          }
+        }
+      }
+
+      // Check for tool results (injected by OpenClaw after tool execution)
+      if (json.type === "tool_result" || json.tool_result) {
+        const result = json.tool_result || json.content || json.result || ""
+        const tool = json.tool || json.name || "unknown"
+        callbacks.onToolResult?.(tool, typeof result === "string" ? result : JSON.stringify(result))
+      }
 
       const reasoning =
         json.reasoning_content ||

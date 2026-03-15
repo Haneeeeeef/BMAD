@@ -8,7 +8,7 @@ import { Copy, ThumbsUp, ThumbsDown, Volume2, RotateCcw, MoreHorizontal, FileTex
 import { toast } from "sonner"
 import { stabilizeStreamingMarkdown } from "@/lib/streaming-markdown"
 import { parseOpenClawContent, fixSentenceSpacing, fixBrokenTables } from "@/lib/chat-utils"
-import { ExcalidrawDiagram } from "./excalidraw-diagram"
+import { DrawioDiagram } from "./drawio-diagram"
 
 // Patterns that indicate "thinking" or status output (collapsed by default)
 // These are agent setup/initialization messages, not the actual conversation
@@ -143,7 +143,7 @@ const DISCOVERY_MARKDOWN_COMPONENTS = {
     const match = /language-(\w+)/.exec(className || "")
     const lang = match ? match[1] : ""
     const codeString = String(children).replace(/\n$/, "")
-    if (lang === "mermaid") return <ExcalidrawDiagram chart={codeString} className="my-4" />
+    if (lang === "mermaid") return <DrawioDiagram chart={codeString} className="my-4" />
     if (!className) return <code className="bg-muted px-1.5 py-0.5 rounded text-[14px] font-mono" {...props}>{children}</code>
     return <code className={cn("block text-[14px]", className)} {...props}>{children}</code>
   },
@@ -181,7 +181,7 @@ const WORKSPACE_MARKDOWN_COMPONENTS = {
   li: ({ children }: { children?: React.ReactNode }) => <li className="text-[15px] leading-7 text-foreground/90">{children}</li>,
   code: ({ className, children, ...props }: { className?: string; children?: React.ReactNode }) => {
     const lang = /language-(\w+)/.exec(className || "")?.[1]
-    if (lang === "mermaid") return <ExcalidrawDiagram chart={String(children).replace(/\n$/, "")} className="my-4" />
+    if (lang === "mermaid") return <DrawioDiagram chart={String(children).replace(/\n$/, "")} className="my-4" />
     if (!className) return <code className="bg-muted px-1.5 py-0.5 rounded text-[13px] font-mono text-foreground/80" {...props}>{children}</code>
     return <code className={cn("block text-[13px]", className)} {...props}>{children}</code>
   },
@@ -204,6 +204,21 @@ const WORKSPACE_MARKDOWN_COMPONENTS = {
     <a href={href} target="_blank" rel="noopener noreferrer" className="text-[var(--brand)] hover:underline">{children}</a>
   ),
 } as const
+
+/* ── agent avatar colors (matches agent-detail-panel) ──────── */
+
+const AGENT_AVATAR_COLORS: Record<string, string> = {
+  jarvis: "bg-[var(--brand-dark)]",
+  analyst: "bg-emerald-500",
+  architect: "bg-blue-500",
+  dev: "bg-violet-500",
+  pm: "bg-amber-500",
+  qa: "bg-rose-500",
+  "quick-flow": "bg-cyan-500",
+  sm: "bg-orange-500",
+  "tech-writer": "bg-teal-500",
+  ux: "bg-pink-500",
+}
 
 interface ChatMessageProps {
   message: Message
@@ -312,8 +327,33 @@ export const ChatMessage = React.memo(function ChatMessage({
   }
 
   // Assistant message - left aligned with actions
+  const agentId = message.agentId
+  const agentName = message.agentName
+  const avatarColor = agentId ? (AGENT_AVATAR_COLORS[agentId] ?? "bg-muted-foreground") : null
+  const initial = agentName ? agentName.charAt(0).toUpperCase() : null
+
   return (
     <div className={cn("mb-6", className)}>
+      {/* Agent identity label (workspace only) */}
+      {isWorkspace && agentName && (
+        <div className="flex items-center gap-1.5 mb-1.5">
+          <img
+            src={`/agents/${agentId}.png`}
+            alt={agentName}
+            className="shrink-0 w-5 h-5 rounded-full object-cover"
+            onError={(e) => {
+              const el = e.target as HTMLImageElement
+              el.style.display = "none"
+              const fallback = el.nextElementSibling as HTMLElement
+              if (fallback) fallback.style.display = "flex"
+            }}
+          />
+          <div className={cn("items-center justify-center shrink-0 w-5 h-5 rounded-full hidden", avatarColor)}>
+            <span className="text-[10px] font-semibold text-white leading-none">{initial}</span>
+          </div>
+          <span className="text-xs font-medium text-muted-foreground">{agentName}</span>
+        </div>
+      )}
       <div className="max-w-none">
         {isLoading && !message.content ? (
           <div className="flex items-center gap-1.5 py-3" role="status" aria-label="Loading response">
@@ -443,6 +483,7 @@ export const ChatMessage = React.memo(function ChatMessage({
 }, (prev, next) => {
   return prev.message.id === next.message.id &&
     prev.message.content === next.message.content &&
+    prev.message.agentId === next.message.agentId &&
     prev.isLoading === next.isLoading &&
     prev.variant === next.variant
 })

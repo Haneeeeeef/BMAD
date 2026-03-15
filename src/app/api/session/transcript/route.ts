@@ -1,9 +1,9 @@
 /**
  * POST /api/session/transcript
  *
- * Append a single user/assistant exchange to the workflow transcript file.
+ * Append a single user/assistant exchange to the full workflow transcript.
  * Called after every chat turn completes (fire-and-forget from client).
- * Transcript lives on VPS at: <projectSlug>/WORKFLOW-TRANSCRIPT-<workflowId>.md
+ * Transcript lives on VPS at: <projectSlug>/WORKFLOW-TRANSCRIPT-FULL-<workflowId>.md
  */
 
 import { requireAuth } from "@/lib/auth"
@@ -13,6 +13,13 @@ export const runtime = "nodejs"
 
 function slugify(name: string): string {
   return name.toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-|-$/g, "")
+}
+
+// Extract username from auth token (format: mc_username_hash)
+function extractUsername(request: Request): string {
+  const token = request.headers.get("x-auth-token") || ""
+  const match = token.match(/^mc_([a-z0-9]+)_/)
+  return match ? match[1] : "user"
 }
 
 export async function POST(request: Request) {
@@ -25,6 +32,8 @@ export async function POST(request: Request) {
     const workflowId: string | undefined = body.workflowId
     const userMessage: string | undefined = body.userMessage
     const assistantMessage: string | undefined = body.assistantMessage
+    const agentName: string | undefined = body.agentName
+    const agentId: string | undefined = body.agentId
 
     if (!projectName || !workflowId) {
       return Response.json({ error: "projectName and workflowId required" }, { status: 400 })
@@ -35,28 +44,33 @@ export async function POST(request: Request) {
     }
 
     const projectSlug = slugify(projectName)
-    const transcriptFile = `WORKFLOW-TRANSCRIPT-${workflowId}.md`
+    const transcriptFile = `WORKFLOW-TRANSCRIPT-FULL-${workflowId}.md`
+    const username = extractUsername(request)
 
     // Skip system-injected messages
     if (userMessage?.startsWith("[Mission Control]") || userMessage?.startsWith("You are")) {
       return Response.json({ success: true, skipped: true })
     }
 
-    // Build the turn entry
+    // Build the turn entry with names
+    const userLabel = username.charAt(0).toUpperCase() + username.slice(1)
+    const agentLabel = agentName || agentId || "Agent"
+
+    // Escape code fences in content to prevent markdown rendering issues
+    const escapeCodeFences = (s: string) => s.replace(/```/g, "` ` `")
+
     const parts: string[] = []
     if (userMessage) {
-      // Truncate very long user messages (file uploads, etc.)
       const text = userMessage.length > 2000
         ? userMessage.slice(0, 200) + "... [truncated]"
-        : userMessage.trim()
-      parts.push(`**User:** ${text}`)
+        : escapeCodeFences(userMessage.trim())
+      parts.push(`**${userLabel}:** ${text}`)
     }
     if (assistantMessage) {
-      // Truncate very long responses
       const text = assistantMessage.length > 3000
         ? assistantMessage.slice(0, 500) + "... [truncated]"
-        : assistantMessage.trim()
-      parts.push(`**Agent:** ${text}`)
+        : escapeCodeFences(assistantMessage.trim())
+      parts.push(`**${agentLabel}:** ${text}`)
     }
 
     const turnEntry = parts.join("\n\n")
@@ -71,7 +85,7 @@ export async function POST(request: Request) {
     } catch {
       // File doesn't exist yet — create with header
       const now = new Date().toISOString().split("T")[0]
-      existing = `# Workflow Transcript: ${workflowId}\n\nStarted: ${now}\n`
+      existing = `# Workflow Transcript: ${workflowId}\n\nStarted: ${now}\nAgent: ${agentLabel}\n`
     }
 
     // Count existing turns to number this one

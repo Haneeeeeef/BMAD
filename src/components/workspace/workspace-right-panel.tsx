@@ -26,20 +26,20 @@ export function WorkspaceRightPanel({
   onMarkDocumentComplete,
 }: WorkspaceRightPanelProps) {
   return (
-    <aside aria-label="Workflow details" className="w-[300px] shrink-0 border-l border-border bg-background flex flex-col overflow-hidden">
-      {/* Workflow Steps — fixed at top */}
+    <aside aria-label="Workflow details" className="w-[300px] shrink-0 border-l border-border/20 flex flex-col overflow-hidden shadow-[-4px_0_24px_rgba(0,0,0,0.06)] backdrop-blur-2xl" style={{ background: "linear-gradient(180deg, rgba(250,250,250,0.96) 0%, rgba(245,245,245,0.94) 50%, rgba(240,240,240,0.92) 100%)" }}>
+      {/* Workflow Steps */}
       <WorkflowSteps steps={steps} />
 
-      {/* Activity — real tool calls from session history */}
-      <ActivityFeed actions={toolActions} isPolling={isPolling} />
-
-      {/* Documents — fills remaining space */}
+      {/* Documents — right after workflow */}
       <DocumentsList
         documents={documents}
         onView={onViewDocument}
         onDownload={onDownloadDocument}
         onMarkComplete={onMarkDocumentComplete ? () => onMarkDocumentComplete() : undefined}
       />
+
+      {/* Activity — at bottom */}
+      <ActivityFeed actions={toolActions} isPolling={isPolling} />
     </aside>
   )
 }

@@ -72,7 +72,7 @@ function getRingTextClass(percentage: number): string {
 }
 
 const RING_SIZE = 36
-const RING_RADIUS = 15
+const RING_RADIUS = 16
 const RING_CIRCUMFERENCE = 2 * Math.PI * RING_RADIUS
 
 function ContextRing({ percentage, tokens, maxTokens }: AgentContext) {
