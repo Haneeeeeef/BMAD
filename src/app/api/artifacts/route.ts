@@ -74,7 +74,8 @@ export async function GET(request: NextRequest) {
     let content: string
     try {
       content = await vps.readFile(projectSlug, relPath)
-    } catch {
+    } catch (err) {
+      console.error(`[artifacts] GET primary failed: ${projectSlug}/${relPath}`, err instanceof Error ? err.message : err)
       // Try legacy paths for backward compatibility
       const legacyPath = relPath
         .replace("deliverables/", "artifacts/planning/")
@@ -87,7 +88,8 @@ export async function GET(request: NextRequest) {
     }
 
     return NextResponse.json({ content, path: relPath })
-  } catch {
+  } catch (err) {
+    console.error(`[artifacts] GET failed: ${projectSlug}/${relPath}`, err instanceof Error ? err.message : err)
     return NextResponse.json({ error: "File not found on VPS", path: relPath }, { status: 404 })
   }
 }
@@ -122,8 +124,10 @@ export async function POST(request: NextRequest) {
       files = [...deliverableFiles, ...researchFiles, ...legacyFiles]
     }
 
+    console.log(`[artifacts] POST listed ${files.length} files for ${project}`)
     return NextResponse.json({ files })
-  } catch {
+  } catch (err) {
+    console.error(`[artifacts] POST failed for listing:`, err instanceof Error ? err.message : err)
     return NextResponse.json({ error: "Failed to list artifacts" }, { status: 500 })
   }
 }
