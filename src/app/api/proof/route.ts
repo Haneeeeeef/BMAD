@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from "next/server"
 
-const PROOF_URL = process.env.PROOF_URL || "http://localhost:4000"
+const PROOF_URL = process.env.PROOF_URL || process.env.NEXT_PUBLIC_PROOF_URL || "http://localhost:4000"
 const PROOF_API_TOKEN = process.env.PROOF_API_TOKEN || ""
 
 // POST /api/proof — create doc, add comment, add suggestion
@@ -129,7 +129,8 @@ export async function POST(request: NextRequest) {
         return NextResponse.json({ error: `Unknown action: ${action}` }, { status: 400 })
     }
   } catch (error) {
-    console.error("[proof] Error:", error)
-    return NextResponse.json({ error: "Internal server error" }, { status: 500 })
+    const msg = error instanceof Error ? error.message : "Unknown error"
+    console.error("[proof] Error:", msg, "PROOF_URL:", PROOF_URL)
+    return NextResponse.json({ error: `Internal server error: ${msg}`, proofUrl: PROOF_URL }, { status: 500 })
   }
 }
