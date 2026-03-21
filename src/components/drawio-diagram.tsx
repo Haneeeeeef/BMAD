@@ -7,7 +7,7 @@ import { toast } from "sonner"
 import { TransformWrapper, TransformComponent, type ReactZoomPanPinchRef } from "react-zoom-pan-pinch"
 
 // Self-hosted draw.io on VPS (Docker: jgraph/drawio on port 8090)
-const DRAWIO_URL = process.env.NEXT_PUBLIC_DRAWIO_URL || "http://178.156.216.77:8090"
+const DRAWIO_URL = process.env.NEXT_PUBLIC_DRAWIO_URL
 
 // Lazy-load mermaid for SVG rendering
 type MermaidAPI = typeof import("mermaid").default

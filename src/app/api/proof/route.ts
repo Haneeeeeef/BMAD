@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from "next/server"
 
-const PROOF_URL = process.env.PROOF_URL || process.env.NEXT_PUBLIC_PROOF_URL || "http://localhost:4000"
+const PROOF_URL = process.env.PROOF_URL || process.env.NEXT_PUBLIC_PROOF_URL
 const PROOF_API_TOKEN = process.env.PROOF_API_TOKEN || ""
 
 // POST /api/proof — create doc, add comment, add suggestion

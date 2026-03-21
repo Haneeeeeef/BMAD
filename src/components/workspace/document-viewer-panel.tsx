@@ -14,7 +14,7 @@ const DrawioDiagram = dynamic(() => import("../drawio-diagram").then(m => ({ def
   loading: () => <div className="h-[400px] flex items-center justify-center bg-muted/50 rounded-lg"><Loader2 className="h-6 w-6 animate-spin text-muted-foreground" /></div>,
 })
 
-const PROOF_URL = process.env.NEXT_PUBLIC_PROOF_URL || "http://localhost:4000"
+const PROOF_URL = process.env.NEXT_PUBLIC_PROOF_URL
 
 /* ── types ────────────────────────────────────────────────── */
 

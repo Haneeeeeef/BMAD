@@ -5,9 +5,13 @@
 
 /* ── config ─────────────────────────────────────────────── */
 
-const VPS_FILES_URL = process.env.VPS_FILES_URL || "http://178.156.216.77:5000"
-const VPS_FILES_USER = process.env.VPS_FILES_USER || "mc"
-const VPS_FILES_PASS = process.env.VPS_FILES_PASS || ""
+const VPS_FILES_URL = process.env.VPS_FILES_URL
+const VPS_FILES_USER = process.env.VPS_FILES_USER
+const VPS_FILES_PASS = process.env.VPS_FILES_PASS
+
+if (!VPS_FILES_URL || !VPS_FILES_USER || !VPS_FILES_PASS) {
+  console.warn("Missing VPS_FILES_URL, VPS_FILES_USER, or VPS_FILES_PASS env vars")
+}
 
 /** Basic auth header for DUFS */
 function authHeader(): string {

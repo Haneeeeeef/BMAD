@@ -1354,7 +1354,7 @@ export function buildWorkflowSystemMessage(
     .replace(/^-|-$/g, '')
     .slice(0, 32)
 
-  const vpsBase = process.env.VPS_PROJECTS_BASE || "/home/haneef/workspaces/jarvis/projects"
+  const vpsBase = process.env.VPS_PROJECTS_BASE || "/home/haneef/workspaces/jarvis/projects" // TODO: move to env var
   const projectRoot = `${vpsBase}/${projectSlug}`
 
   const parts: string[] = []

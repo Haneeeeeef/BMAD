@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from "next/server"
 
-const GIT_API_URL = process.env.GIT_API_URL || "http://178.156.216.77:3003"
+const GIT_API_URL = process.env.GIT_API_URL
 
 // GET /api/artifacts/history?project=slug&path=artifacts/planning/product-brief.md
 export async function GET(request: NextRequest) {
