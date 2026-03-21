@@ -590,7 +590,7 @@ export const DocumentViewerPanel = memo(function DocumentViewerPanel({
             </div>
           ) : proofSlug ? (
             <iframe
-              src={`${PROOF_URL}/d/${proofSlug}?token=${proofToken}&embed=1&theme=light`}
+              src={`${PROOF_URL}/d/${proofSlug}?token=${proofToken}&embed=1&theme=light&displayName=Haneef&collab=0`}
               className="w-full h-full border-0"
               style={{ colorScheme: "light" }}
               title={`Proof: ${doc.name}`}
