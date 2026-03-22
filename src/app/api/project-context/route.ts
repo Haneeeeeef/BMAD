@@ -73,7 +73,21 @@ export async function GET(request: NextRequest) {
       transcripts.push(...rootFiles)
     } catch { /* silent */ }
 
-    return NextResponse.json({ available, transcripts })
+    // Check for uploaded source files in memory/sources/
+    const sourceFiles: { path: string; content: string }[] = []
+    try {
+      const sources = await vps.listFiles(slug, "memory/sources", { filesOnly: true })
+      for (const filename of sources) {
+        try {
+          const content = await vps.readFile(slug, `memory/sources/${filename}`)
+          if (content.trim()) {
+            sourceFiles.push({ path: `memory/sources/${filename}`, content })
+          }
+        } catch { /* skip unreadable files */ }
+      }
+    } catch { /* no sources directory */ }
+
+    return NextResponse.json({ available, transcripts, sourceFiles })
   } catch {
     return NextResponse.json({ available: [], transcripts: [] })
   }

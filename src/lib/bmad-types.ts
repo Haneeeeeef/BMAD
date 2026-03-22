@@ -1336,6 +1336,7 @@ export function searchWorkflows(query: string): BmadWorkflow[] {
 export type ProjectContextFiles = {
   available: { path: string; label: string }[]
   transcripts: string[]
+  sourceFiles?: { path: string; content: string }[]
 }
 
 /**
@@ -1378,10 +1379,22 @@ export function buildWorkflowSystemMessage(
     parts.push("")
   }
 
-  // Input documents
-  if (project.inputDocuments?.length) {
+  // Source files — inject full content on first workflow so agent can absorb and document
+  if (contextFiles?.sourceFiles?.length) {
+    parts.push(`## Source Documents (READ CAREFULLY)`)
+    parts.push(`The user uploaded ${contextFiles.sourceFiles.length} source file(s). Read through ALL of them thoroughly before starting. Use the information to inform your work and document key findings into PROJECT-CONTEXT.md.`)
+    parts.push("")
+    for (const sf of contextFiles.sourceFiles) {
+      const filename = sf.path.split("/").pop() || sf.path
+      parts.push(`### Source: ${filename}`)
+      parts.push("```")
+      parts.push(sf.content.slice(0, 50000)) // Cap at 50K chars per file
+      parts.push("```")
+      parts.push("")
+    }
+  } else if (project.inputDocuments?.length) {
     parts.push(`## Uploaded Documents`)
-    parts.push(`${project.inputDocuments.length} files uploaded to \`${projectRoot}/uploads/\``)
+    parts.push(`${project.inputDocuments.length} files were uploaded. Check \`${projectRoot}/memory/sources/\` to read them.`)
     parts.push("")
   }
 
