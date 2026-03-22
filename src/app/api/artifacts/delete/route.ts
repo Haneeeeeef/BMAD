@@ -37,7 +37,7 @@ const ARTIFACT_PATHS: Record<string, string> = {
  * Deletes the artifact file + workflow transcript from VPS
  */
 export async function POST(request: NextRequest) {
-  const auth = requireAuth(request)
+  const auth = await requireAuth(request)
   if (auth instanceof Response) return auth
 
   try {

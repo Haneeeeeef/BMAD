@@ -1,7 +1,7 @@
 "use client"
 
 import { useState, useRef, useEffect, useCallback } from "react"
-import { safeGetItem, safeSetItem, safeRemoveItem, authHeaders } from "@/lib/safe-storage"
+import { authHeaders } from "@/lib/safe-storage"
 import { Message, Attachment, generateId } from "@/lib/types"
 import { parseSSEStream } from "@/lib/sse"
 import { fileToAttachment } from "@/lib/attachments"
@@ -28,45 +28,71 @@ export function useWorkspaceChat({ project, onResponseComplete }: UseWorkspaceCh
   const currentDeliverable = project.deliverables.find(d => d.id === project.currentDeliverable)
   const currentWorkflow = currentDeliverable ? getWorkflowById(currentDeliverable.workflowId) : null
 
-  const [messages, setMessages] = useState<Message[]>(() => {
-    if (typeof window !== "undefined" && project.currentDeliverable) {
-      const stored = safeGetItem(`project-chat-${project.id}-${project.currentDeliverable}`)
-      if (stored) {
-        try { return JSON.parse(stored) } catch { return [] }
-      }
-    }
-    return []
-  })
+  const [messages, setMessages] = useState<Message[]>([])
   const [isLoading, setIsLoading] = useState(false)
   const [inputValue, setInputValue] = useState("")
   const messagesEndRef = useRef<HTMLDivElement>(null)
-  const workflowStarted = useRef(messages.length > 0)
+  const workflowStarted = useRef(false)
   const needsReorientation = useRef(false)
+  const saveTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null)
+  const initialLoadDone = useRef(false)
+
+  // Load messages from MongoDB on mount / deliverable switch
+  useEffect(() => {
+    if (!project.currentDeliverable) return
+
+    initialLoadDone.current = false
+    fetch(`/api/db/chat-messages?projectId=${encodeURIComponent(project.id)}&deliverableId=${encodeURIComponent(project.currentDeliverable)}`, {
+      headers: authHeaders(),
+    })
+      .then(res => res.ok ? res.json() : [])
+      .then((msgs: Message[]) => {
+        setMessages(msgs)
+        workflowStarted.current = msgs.length > 0
+        initialLoadDone.current = true
+      })
+      .catch(() => {
+        setMessages([])
+        workflowStarted.current = false
+        initialLoadDone.current = true
+      })
+  }, [project.id, project.currentDeliverable])
 
   // Auto-scroll
   useEffect(() => {
     messagesEndRef.current?.scrollIntoView({ behavior: "smooth" })
   }, [messages])
 
-  // Persist messages (strip base64 attachment data to avoid blowing localStorage quota)
+  // Persist messages to MongoDB (debounced 2s)
   useEffect(() => {
-    if (project.currentDeliverable) {
-      const key = `project-chat-${project.id}-${project.currentDeliverable}`
-      if (messages.length === 0) {
-        safeRemoveItem(key)
-      } else {
-        const lightweight = messages.map(m => ({
-          ...m,
-          attachments: m.attachments?.map(a => ({ ...a, data: undefined })),
-        }))
-        safeSetItem(key, JSON.stringify(lightweight))
-      }
+    if (!project.currentDeliverable || !initialLoadDone.current) return
+
+    if (saveTimeoutRef.current) clearTimeout(saveTimeoutRef.current)
+    saveTimeoutRef.current = setTimeout(() => {
+      const lightweight = messages.map(m => ({
+        ...m,
+        attachments: m.attachments?.map(a => ({ ...a, data: undefined })),
+      }))
+
+      fetch("/api/db/chat-messages", {
+        method: "POST",
+        headers: authHeaders({ "Content-Type": "application/json" }),
+        body: JSON.stringify({
+          projectId: project.id,
+          deliverableId: project.currentDeliverable,
+          messages: lightweight,
+        }),
+      }).catch(() => {})
+    }, 2000)
+
+    return () => {
+      if (saveTimeoutRef.current) clearTimeout(saveTimeoutRef.current)
     }
   }, [messages, project.id, project.currentDeliverable])
 
   // Start workflow when deliverable becomes active
   useEffect(() => {
-    if (currentDeliverable && currentWorkflow && !workflowStarted.current && messages.length === 0) {
+    if (currentDeliverable && currentWorkflow && !workflowStarted.current && messages.length === 0 && initialLoadDone.current) {
       workflowStarted.current = true
 
       const projectSlug = slugify(project.name)
@@ -174,7 +200,6 @@ export function useWorkspaceChat({ project, onResponseComplete }: UseWorkspaceCh
 
         setMessages(prev => {
           if (messageAdded) {
-            // Update only the last message (the streaming one)
             const last = prev[prev.length - 1]
             if (last?.id === assistantMsgId) {
               const updated = [...prev]
@@ -190,7 +215,6 @@ export function useWorkspaceChat({ project, onResponseComplete }: UseWorkspaceCh
               : m
             )
           }
-          // First flush — add the message
           messageAdded = true
           return [...prev, {
             id: assistantMsgId,
@@ -222,15 +246,13 @@ export function useWorkspaceChat({ project, onResponseComplete }: UseWorkspaceCh
         },
       })
 
-      // Final flush — ensure all content is committed to state
+      // Final flush
       if (rafId) cancelAnimationFrame(rafId)
       needsFlush = true
       flushToState()
 
-      // Notify parent of completed response for workflow progress detection
       onResponseComplete?.(assistantContent)
 
-      // Return the response content for callers that need it
       const responseResult = { content: assistantContent, agentId: respondingAgentId, agentName: respondingAgentName }
 
       // Append turn to transcript (fire-and-forget)
@@ -309,22 +331,29 @@ export function useWorkspaceChat({ project, onResponseComplete }: UseWorkspaceCh
     setInputValue("")
   }, [inputValue, isLoading, sendMessage, project.name])
 
-  // Switch deliverable: load stored messages
+  // Switch deliverable: load messages from MongoDB
   const switchDeliverable = useCallback((deliverableId: string) => {
-    const stored = safeGetItem(`project-chat-${project.id}-${deliverableId}`)
-    let existingMessages: Message[] = []
-    if (stored) {
-      try { existingMessages = JSON.parse(stored) } catch { existingMessages = [] }
-    }
-    workflowStarted.current = existingMessages.length > 0
-    setMessages(existingMessages)
+    initialLoadDone.current = false
+    fetch(`/api/db/chat-messages?projectId=${encodeURIComponent(project.id)}&deliverableId=${encodeURIComponent(deliverableId)}`, {
+      headers: authHeaders(),
+    })
+      .then(res => res.ok ? res.json() : [])
+      .then((msgs: Message[]) => {
+        workflowStarted.current = msgs.length > 0
+        setMessages(msgs)
+        initialLoadDone.current = true
+      })
+      .catch(() => {
+        workflowStarted.current = false
+        setMessages([])
+        initialLoadDone.current = true
+      })
   }, [project.id])
 
   // Clear messages after session rotation
   const resetForNewSession = useCallback(() => {
     needsReorientation.current = true
   }, [])
-
 
   const lastMessage = messages[messages.length - 1]
   const isStreaming = isLoading && lastMessage?.role === "assistant"

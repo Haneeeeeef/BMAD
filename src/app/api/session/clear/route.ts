@@ -76,7 +76,7 @@ Reply "DONE" when finished.`
 /* ── route handler ──────────────────────────────────────── */
 
 export async function POST(request: Request) {
-  const auth = requireAuth(request)
+  const auth = await requireAuth(request)
   if (auth instanceof Response) return auth
 
   const openclawUrl = process.env.OPENCLAW_URL

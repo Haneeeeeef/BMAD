@@ -1,10 +1,10 @@
 "use client"
 
-import { useState, useEffect } from "react"
+import { useState, useEffect, useCallback } from "react"
 import { useParams } from "next/navigation"
-import { loadProjects, updateProject } from "@/lib/projects-storage"
 import { OrchestrationWorkspace } from "@/components/orchestration-workspace"
 import { Project } from "@/lib/bmad-types"
+import { authHeaders } from "@/lib/safe-storage"
 
 export default function ProjectPage() {
   const params = useParams()
@@ -12,32 +12,38 @@ export default function ProjectPage() {
   const [project, setProject] = useState<Project | null>(null)
   const [isLoading, setIsLoading] = useState(true)
 
-  // Load project from localStorage
-  // Note: localStorage may store the legacy Project shape (projects-storage.ts)
-  // or the full BMAD Project shape — we cast and ensure required fields exist
+  // Load project from MongoDB
   useEffect(() => {
-    const projects = loadProjects()
-    const found = projects.find((p) => p.id === projectId) as (Project & Record<string, unknown>) | undefined
-    if (found) {
-      // Ensure deliverables array exists (backwards compatibility)
-      if (!found.deliverables) {
-        (found as Project).deliverables = []
-      }
-      if (!found.inputDocuments) {
-        (found as Project).inputDocuments = []
-      }
-      setProject(found as Project)
-    }
-    setIsLoading(false)
+    fetch(`/api/db/projects?id=${encodeURIComponent(projectId)}`, {
+      headers: authHeaders(),
+    })
+      .then(res => {
+        if (!res.ok) return null
+        return res.json()
+      })
+      .then(data => {
+        if (data) {
+          if (!data.deliverables) data.deliverables = []
+          if (!data.inputDocuments) data.inputDocuments = []
+          setProject(data as Project)
+        }
+      })
+      .catch(() => {})
+      .finally(() => setIsLoading(false))
   }, [projectId])
 
-  // Save project updates
-  const handleProjectUpdate = (updated: Project) => {
+  // Save project updates to MongoDB
+  const handleProjectUpdate = useCallback((updated: Project) => {
     setProject(updated)
 
-    // Persist to localStorage via projects-storage
-    updateProject(updated.id, { ...updated, updatedAt: Date.now() } as unknown as Parameters<typeof updateProject>[1])
-  }
+    fetch("/api/db/projects", {
+      method: "PUT",
+      headers: authHeaders({ "Content-Type": "application/json" }),
+      body: JSON.stringify({ ...updated, updatedAt: Date.now() }),
+    }).catch(err => {
+      console.error("[project-page] Failed to save project:", err)
+    })
+  }, [])
 
   if (isLoading) {
     return (

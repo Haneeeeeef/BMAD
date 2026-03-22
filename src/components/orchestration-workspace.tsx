@@ -8,7 +8,7 @@ import {
   Loader2,
 } from "lucide-react"
 import Link from "next/link"
-import { safeGetItem, safeRemoveItem, authHeaders } from "@/lib/safe-storage"
+import { authHeaders } from "@/lib/safe-storage"
 import { ConfirmDialog } from "@/components/confirm-dialog"
 import { Tooltip, TooltipContent, TooltipTrigger, TooltipProvider } from "@/components/ui/tooltip"
 import type { Agent } from "@/components/agent-panel"
@@ -247,8 +247,10 @@ export function OrchestrationWorkspace({ project, onProjectUpdate }: Orchestrati
         }).catch(() => {})
       }
 
-      // Clean up chat storage
-      safeRemoveItem(`project-chat-${project.id}-${deleteTarget.id}`)
+      // Clean up chat storage via MongoDB API
+      fetch(`/api/db/chat-messages?projectId=${encodeURIComponent(project.id)}&deliverableId=${encodeURIComponent(deleteTarget.id)}`, {
+        method: "DELETE",
+      }).catch(() => {})
 
       // Remove from project state
       const updatedDeliverables = project.deliverables.filter(d => d.id !== deleteTarget.id)

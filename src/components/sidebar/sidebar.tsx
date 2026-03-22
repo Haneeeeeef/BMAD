@@ -9,6 +9,7 @@ import { SidebarSection } from "./sidebar-section"
 import { ChatSearch, type SearchItem } from "@/components"
 import { PenSquare, Search, FolderKanban, Settings, PanelLeftClose, PanelLeft } from "lucide-react"
 import { authHeaders } from "@/lib/safe-storage"
+import { deleteCanvas } from "@/lib/canvas-storage"
 import { mockProjects } from "@/lib/mock-data"
 import { useChatContext } from "@/contexts/chat-context"
 import { useActiveSessions } from "@/hooks/use-active-sessions"
@@ -39,11 +40,8 @@ export function Sidebar({ isOpen = true, onToggle, className }: SidebarProps) {
       // Delete from localStorage
       deleteSession(sessionId)
 
-      // Clear canvas data
-      localStorage.removeItem(`canvas-${sessionId}`)
-
-      // Clear agent completions
-      localStorage.removeItem(`agent_completions_${sessionId}`)
+      // Clear canvas data and agent completions
+      await deleteCanvas(sessionId)
 
       toast.success('Chat deleted')
     } catch {

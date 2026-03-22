@@ -8,7 +8,7 @@ interface TitleRequest {
 }
 
 export async function POST(request: Request) {
-  const auth = requireAuth(request)
+  const auth = await requireAuth(request)
   if (auth instanceof Response) return auth
 
   const kimiApiKey = process.env.KIMI_API_KEY

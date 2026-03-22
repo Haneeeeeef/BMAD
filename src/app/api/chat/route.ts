@@ -129,7 +129,7 @@ function extractUsername(userToken: string | undefined): string | null {
 }
 
 export async function POST(request: Request) {
-  const auth = requireAuth(request)
+  const auth = await requireAuth(request)
   if (auth instanceof Response) return auth
 
   const openclawUrl = process.env.OPENCLAW_URL

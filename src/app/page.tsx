@@ -3,8 +3,8 @@
 import { useEffect, useState } from "react"
 import { useRouter } from "next/navigation"
 import Link from "next/link"
-import { loadProjects as loadStoredProjects } from "@/lib/projects-storage"
 import { useAuth } from "@/contexts/auth-context"
+import { authHeaders } from "@/lib/safe-storage"
 import { Button } from "@/components/ui/button"
 import { Project } from "@/lib/bmad-types"
 import { Plus, Monitor } from "lucide-react"
@@ -23,13 +23,19 @@ export default function HomePage() {
   }, [user, authLoading, router])
 
   useEffect(() => {
-    const parsed = loadStoredProjects() as unknown as Project[]
-    if (parsed.length > 0) {
-      parsed.sort((a, b) => b.updatedAt - a.updatedAt)
-      setProjects(parsed)
-    }
-    setIsLoading(false)
-  }, [])
+    if (!user) return
+
+    fetch("/api/db/projects", { headers: authHeaders() })
+      .then(res => res.ok ? res.json() : [])
+      .then((data: Project[]) => {
+        if (data.length > 0) {
+          data.sort((a, b) => b.updatedAt - a.updatedAt)
+        }
+        setProjects(data)
+      })
+      .catch(() => setProjects([]))
+      .finally(() => setIsLoading(false))
+  }, [user])
 
   if (authLoading || isLoading) {
     return (
@@ -56,9 +62,13 @@ export default function HomePage() {
           </Link>
           <div className="flex items-center gap-2.5">
             <span className="text-sm text-zinc-500">{user.username}</span>
-            <div className="w-7 h-7 rounded-full bg-zinc-200 flex items-center justify-center">
-              <span className="text-[10px] font-medium text-zinc-600">{initials}</span>
-            </div>
+            {user.image ? (
+              <img src={user.image} alt="" className="w-7 h-7 rounded-full" />
+            ) : (
+              <div className="w-7 h-7 rounded-full bg-zinc-200 flex items-center justify-center">
+                <span className="text-[10px] font-medium text-zinc-600">{initials}</span>
+              </div>
+            )}
           </div>
         </div>
       </nav>

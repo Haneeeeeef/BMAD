@@ -6,7 +6,7 @@ const OPENCLAW_TOKEN = process.env.OPENCLAW_TOKEN || ""
 
 // SSE endpoint that proxies OpenClaw events via direct HTTP
 export async function GET(request: NextRequest) {
-  const auth = requireAuth(request)
+  const auth = await requireAuth(request)
   if (auth instanceof Response) return auth
 
   if (!OPENCLAW_URL) {

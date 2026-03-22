@@ -46,7 +46,6 @@ export { WorkflowPicker } from "./workflow-picker"
 
 // Project workspace components
 export { DocumentPicker } from "./document-picker"
-export { ProjectWorkspace } from "./project-workspace"
 export { OrchestrationWorkspace } from "./orchestration-workspace"
 export { ValidationPanel } from "./validation-panel"
 export { TaskKanban } from "./task-kanban"
@@ -73,7 +72,6 @@ export { ContextViewer } from "./context-viewer"
 export { ContextIndicator } from "./context-indicator"
 
 // Chat components
-export { JarvisChat } from "./jarvis-chat"
 export { ChatHeader } from "./chat-header"
 export { CanvasPanel, type CanvasPanelProps } from "./canvas-panel"
 

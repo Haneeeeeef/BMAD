@@ -39,9 +39,9 @@ export default function ChatPage() {
   // Artifact callback — bridges chat streaming → canvas panel
   // ---------------------------------------------------------------------------
   const handleArtifactsFound = useCallback(
-    (artifacts: ExtractedArtifact[]) => {
+    async (artifacts: ExtractedArtifact[]) => {
       for (const artifact of artifacts) {
-        const updated = saveDocument(sessionId, {
+        const updated = await saveDocument(sessionId, {
           identifier: artifact.identifier,
           title: artifact.title,
           type: artifact.type,

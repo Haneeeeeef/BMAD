@@ -23,7 +23,7 @@ function extractUsername(request: Request): string {
 }
 
 export async function POST(request: Request) {
-  const auth = requireAuth(request)
+  const auth = await requireAuth(request)
   if (auth instanceof Response) return auth
 
   try {

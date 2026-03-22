@@ -3,7 +3,7 @@ export const runtime = "edge"
 import { requireAuth } from "@/lib/auth"
 
 export async function POST(request: Request) {
-  const auth = requireAuth(request)
+  const auth = await requireAuth(request)
   if (auth instanceof Response) return auth
 
   const sessionDeleteUrl = process.env.SESSION_DELETE_URL ||

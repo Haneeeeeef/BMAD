@@ -16,7 +16,7 @@ const DrawioDiagram = dynamic(() => import("./drawio-diagram").then(m => ({ defa
 })
 import { toast } from "sonner"
 import type { CanvasDocument, DocumentVersion } from "@/lib/canvas-storage"
-import { getCurrentVersion, getLatestVersion } from "@/lib/canvas-storage"
+import { getCurrentVersion, getLatestVersion, unapproveDocument } from "@/lib/canvas-storage"
 import { ChevronLeft, ChevronRight } from "lucide-react"
 import { ApprovalModal } from "@/components/approval-modal"
 import { ConfirmDialog } from "@/components/confirm-dialog"
@@ -444,25 +444,11 @@ export function DiscoveryCanvas({
 
         {currentVersion?.status === "approved" && isLatestVersion && (
           <button
-            onClick={() => {
-              // Temporary unapprove - directly update localStorage
+            onClick={async () => {
               const sessionId = window.location.pathname.split('/').pop()
-              const canvasKey = `canvas-${sessionId}`
-              const canvas = JSON.parse(localStorage.getItem(canvasKey) || '{}')
-              if (canvas.documents) {
-                canvas.documents.forEach((doc: { identifier: string; versions?: Array<{ status: string; approvedAt?: number }> }) => {
-                  if (doc.identifier === activeDoc?.identifier && doc.versions) {
-                    doc.versions.forEach(v => {
-                      v.status = 'awaiting_approval'
-                      delete v.approvedAt
-                    })
-                  }
-                })
-                localStorage.setItem(canvasKey, JSON.stringify(canvas))
-                // Also delete any projects
-                localStorage.setItem('mission-control-projects', '[]')
-                window.location.reload()
-              }
+              if (!sessionId || !activeDoc) return
+              await unapproveDocument(sessionId, activeDoc.identifier)
+              window.location.reload()
             }}
             className="flex items-center gap-1.5 px-4 py-2 text-sm font-medium text-emerald-600 hover:bg-muted rounded-lg transition-colors"
           >

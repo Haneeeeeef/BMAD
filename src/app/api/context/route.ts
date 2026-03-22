@@ -5,7 +5,7 @@ const OPENCLAW_URL = process.env.OPENCLAW_URL
 
 // GET /api/context?type=project-context|memory|memory-learnings|workflow-transcript&project=bmad-workflow-for-ai&workflow=create-product-brief
 export async function GET(request: NextRequest) {
-  const auth = requireAuth(request)
+  const auth = await requireAuth(request)
   if (auth instanceof Response) return auth
 
   const url = new URL(request.url)

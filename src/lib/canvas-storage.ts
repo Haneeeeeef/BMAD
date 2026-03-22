@@ -1,5 +1,5 @@
 import { CanvasStatus } from "./canvas-types"
-import { safeGetItem, safeSetItem, safeRemoveItem } from "./safe-storage"
+import { authHeaders } from "./safe-storage"
 
 // Single version of a document
 export interface DocumentVersion {
@@ -15,9 +15,9 @@ export interface DocumentVersion {
 export interface CanvasDocument {
   identifier: string
   title: string
-  type: string // e.g., "project_brief", "process_flow", "text/markdown"
+  type: string
   versions: DocumentVersion[]
-  activeVersion: number // Which version is currently being viewed
+  activeVersion: number
   createdAt: number
   updatedAt: number
 }
@@ -37,18 +37,19 @@ export interface CanvasData {
   sessionId: string
   documents: CanvasDocument[]
   activeDocumentId?: string
+  completions?: AgentCompletion[]
   updatedAt: number
 }
 
-// Legacy single-document format (for backwards compatibility)
-export interface LegacyCanvasData {
-  sessionId: string
+// Input for saving a document
+export interface SaveDocumentInput {
+  identifier: string
+  title: string
+  type: string
   content: string
   status: CanvasStatus
-  sections?: Record<string, string>
-  createdAt: number
-  updatedAt: number
-  approvedAt?: number
+  agent?: string
+  version?: number
 }
 
 // Agent completion notifications
@@ -59,120 +60,40 @@ export interface AgentCompletion {
   acknowledged: boolean
 }
 
-const COMPLETIONS_KEY_PREFIX = "agent_completions_"
-const STORAGE_KEY_PREFIX = "canvas_"
+// --- All operations now hit MongoDB via API ---
 
-export function getCanvasKey(sessionId: string): string {
-  return `${STORAGE_KEY_PREFIX}${sessionId}`
-}
-
-// Load canvas data (handles legacy format migration)
-export function loadCanvas(sessionId: string): CanvasData | null {
-  if (typeof window === "undefined") return null
-
+export async function loadCanvas(sessionId: string): Promise<CanvasData | null> {
   try {
-    const key = getCanvasKey(sessionId)
-    const stored = safeGetItem(key)
-    if (!stored) return null
-
-    const parsed = JSON.parse(stored)
-
-    // Check if it's legacy format (has 'content' but no 'documents')
-    if (parsed.content && !parsed.documents) {
-      // Migrate to new format with versions
-      const legacy = parsed as LegacyCanvasData
-      const migrated: CanvasData = {
-        sessionId: legacy.sessionId,
-        documents: [{
-          identifier: "project-brief",
-          title: "Project Brief",
-          type: "project_brief",
-          versions: [{
-            version: 1,
-            content: legacy.content,
-            status: legacy.status,
-            createdAt: legacy.createdAt,
-            approvedAt: legacy.approvedAt,
-          }],
-          activeVersion: 1,
-          createdAt: legacy.createdAt,
-          updatedAt: legacy.updatedAt,
-        }],
-        activeDocumentId: "project-brief",
-        updatedAt: legacy.updatedAt,
-      }
-      // Save migrated format
-      saveCanvasData(migrated)
-      return migrated
-    }
-
-    // Migrate old documents without versions array
-    const data = parsed as CanvasData
-    let needsMigration = false
-    data.documents = data.documents.map(doc => {
-      if (!doc.versions) {
-        needsMigration = true
-        // Migrate old format to versioned format
-        const oldDoc = doc as any
-        return {
-          identifier: doc.identifier,
-          title: doc.title,
-          type: doc.type,
-          versions: [{
-            version: oldDoc.version || 1,
-            content: oldDoc.content || "",
-            status: oldDoc.status || "draft",
-            createdAt: doc.createdAt,
-            approvedAt: oldDoc.approvedAt,
-            agent: oldDoc.agent,
-          }],
-          activeVersion: oldDoc.version || 1,
-          createdAt: doc.createdAt,
-          updatedAt: doc.updatedAt,
-        }
-      }
-      return doc
+    const res = await fetch(`/api/db/canvas?sessionId=${encodeURIComponent(sessionId)}`, {
+      headers: authHeaders(),
     })
-
-    if (needsMigration) {
-      saveCanvasData(data)
-    }
-
-    return data
+    if (!res.ok) return null
+    const data = await res.json()
+    return data || null
   } catch {
     return null
   }
 }
 
-// Save full canvas data
-export function saveCanvasData(data: CanvasData): void {
-  if (typeof window === "undefined") return
-
+export async function saveCanvasData(data: CanvasData): Promise<void> {
   try {
-    const key = getCanvasKey(data.sessionId)
-    safeSetItem(key, JSON.stringify({
-      ...data,
-      updatedAt: Date.now(),
-    }))
+    await fetch("/api/db/canvas", {
+      method: "POST",
+      headers: authHeaders({ "Content-Type": "application/json" }),
+      body: JSON.stringify({
+        sessionId: data.sessionId,
+        documents: data.documents,
+        activeDocumentId: data.activeDocumentId,
+        completions: data.completions ?? [],
+      }),
+    })
   } catch {
-    console.error("Failed to save canvas to localStorage")
+    console.error("Failed to save canvas")
   }
 }
 
-// Input for saving a document (simplified interface)
-export interface SaveDocumentInput {
-  identifier: string
-  title: string
-  type: string
-  content: string
-  status: CanvasStatus
-  agent?: string
-  version?: number // Optional - auto-increments if not specified
-}
-
-// Add or update a document (creates new version if content changed)
-export function saveDocument(sessionId: string, input: SaveDocumentInput): CanvasData {
-  const canvas = loadCanvas(sessionId) || {
+export async function saveDocument(sessionId: string, input: SaveDocumentInput): Promise<CanvasData> {
+  const canvas = await loadCanvas(sessionId) || {
     sessionId,
     documents: [],
     updatedAt: Date.now(),
@@ -182,10 +103,8 @@ export function saveDocument(sessionId: string, input: SaveDocumentInput): Canva
   const existingIndex = canvas.documents.findIndex(d => d.identifier === input.identifier)
 
   if (existingIndex >= 0) {
-    // Document exists - check if content changed
     const existingDoc = canvas.documents[existingIndex]
 
-    // Ensure versions array exists (migration safety)
     if (!existingDoc.versions || existingDoc.versions.length === 0) {
       existingDoc.versions = [{
         version: 1,
@@ -196,14 +115,12 @@ export function saveDocument(sessionId: string, input: SaveDocumentInput): Canva
       existingDoc.activeVersion = 1
     }
 
-    // Only create a new version if content actually changed
     const latestVersion = existingDoc.versions.find(v => v.version === getLatestVersion(existingDoc))
     if (latestVersion && latestVersion.content === input.content && latestVersion.status === input.status) {
-      // Content unchanged — skip version creation, just update title if needed
       if (existingDoc.title !== input.title) {
         existingDoc.title = input.title
         existingDoc.updatedAt = now
-        saveCanvasData(canvas)
+        await saveCanvasData(canvas)
       }
       return canvas
     }
@@ -220,7 +137,6 @@ export function saveDocument(sessionId: string, input: SaveDocumentInput): Canva
     existingDoc.title = input.title
     existingDoc.updatedAt = now
   } else {
-    // New document - create with version 1
     canvas.documents.push({
       identifier: input.identifier,
       title: input.title,
@@ -238,24 +154,21 @@ export function saveDocument(sessionId: string, input: SaveDocumentInput): Canva
     })
   }
 
-  // Set as active if it's the first document
   if (!canvas.activeDocumentId) {
     canvas.activeDocumentId = input.identifier
   }
 
-  saveCanvasData(canvas)
+  await saveCanvasData(canvas)
   return canvas
 }
 
-// Approve a specific document (approves the LATEST version only)
-export function approveDocument(sessionId: string, identifier: string): CanvasData | null {
-  const canvas = loadCanvas(sessionId)
+export async function approveDocument(sessionId: string, identifier: string): Promise<CanvasData | null> {
+  const canvas = await loadCanvas(sessionId)
   if (!canvas) return null
 
   const doc = canvas.documents.find(d => d.identifier === identifier)
   if (!doc || !doc.versions.length) return null
 
-  // Always approve the latest version
   const latestVersionNum = getLatestVersion(doc)
   const latestVersion = doc.versions.find(v => v.version === latestVersionNum)
 
@@ -263,25 +176,22 @@ export function approveDocument(sessionId: string, identifier: string): CanvasDa
     latestVersion.status = "approved"
     latestVersion.approvedAt = Date.now()
 
-    // Mark all older versions as superseded (can't be approved)
     doc.versions.forEach(v => {
       if (v.version < latestVersionNum && v.status === "awaiting_approval") {
-        v.status = "draft" // Superseded - no longer awaiting approval
+        v.status = "draft"
       }
     })
 
-    // Switch to the approved version
     doc.activeVersion = latestVersionNum
   }
   doc.updatedAt = Date.now()
 
-  saveCanvasData(canvas)
+  await saveCanvasData(canvas)
   return canvas
 }
 
-// Unapprove a specific document (reverts to awaiting_approval)
-export function unapproveDocument(sessionId: string, identifier: string): CanvasData | null {
-  const canvas = loadCanvas(sessionId)
+export async function unapproveDocument(sessionId: string, identifier: string): Promise<CanvasData | null> {
+  const canvas = await loadCanvas(sessionId)
   if (!canvas) return null
 
   const doc = canvas.documents.find(d => d.identifier === identifier)
@@ -294,39 +204,35 @@ export function unapproveDocument(sessionId: string, identifier: string): Canvas
   }
   doc.updatedAt = Date.now()
 
-  saveCanvasData(canvas)
+  await saveCanvasData(canvas)
   return canvas
 }
 
-// Switch to a different version of a document
-export function setDocumentVersion(sessionId: string, identifier: string, versionNum: number): CanvasData | null {
-  const canvas = loadCanvas(sessionId)
+export async function setDocumentVersion(sessionId: string, identifier: string, versionNum: number): Promise<CanvasData | null> {
+  const canvas = await loadCanvas(sessionId)
   if (!canvas) return null
 
   const doc = canvas.documents.find(d => d.identifier === identifier)
   if (!doc) return null
 
-  // Check if version exists
   const version = doc.versions.find(v => v.version === versionNum)
   if (!version) return null
 
   doc.activeVersion = versionNum
-  saveCanvasData(canvas)
+  await saveCanvasData(canvas)
   return canvas
 }
 
-// Set active document
-export function setActiveDocument(sessionId: string, identifier: string): void {
-  const canvas = loadCanvas(sessionId)
+export async function setActiveDocument(sessionId: string, identifier: string): Promise<void> {
+  const canvas = await loadCanvas(sessionId)
   if (!canvas) return
 
   canvas.activeDocumentId = identifier
-  saveCanvasData(canvas)
+  await saveCanvasData(canvas)
 }
 
-// Remove a document from canvas
-export function removeDocument(sessionId: string, identifier: string): CanvasData | null {
-  const canvas = loadCanvas(sessionId)
+export async function removeDocument(sessionId: string, identifier: string): Promise<CanvasData | null> {
+  const canvas = await loadCanvas(sessionId)
   if (!canvas) return null
 
   const docIndex = canvas.documents.findIndex(d => d.identifier === identifier)
@@ -334,46 +240,28 @@ export function removeDocument(sessionId: string, identifier: string): CanvasDat
 
   canvas.documents.splice(docIndex, 1)
 
-  // Update active document if we removed the active one
   if (canvas.activeDocumentId === identifier) {
     canvas.activeDocumentId = canvas.documents[0]?.identifier
   }
 
-  saveCanvasData(canvas)
+  await saveCanvasData(canvas)
   return canvas
 }
 
-// Legacy compatibility - save single document as "project-brief"
-export function saveCanvas(data: LegacyCanvasData): void {
-  saveDocument(data.sessionId, {
-    identifier: "project-brief",
-    title: "Project Brief",
-    type: "project_brief",
-    content: data.content,
-    status: data.status,
-    version: 1,
-  })
-}
-
-// Legacy compatibility - approve the project brief
-export function approveCanvas(sessionId: string): CanvasData | null {
-  return approveDocument(sessionId, "project-brief")
-}
-
-export function deleteCanvas(sessionId: string): void {
-  if (typeof window === "undefined") return
-
+export async function deleteCanvas(sessionId: string): Promise<void> {
   try {
-    const key = getCanvasKey(sessionId)
-    safeRemoveItem(key)
+    await fetch(`/api/db/canvas?sessionId=${encodeURIComponent(sessionId)}`, {
+      method: "DELETE",
+      headers: authHeaders(),
+    })
   } catch {
-    console.error("Failed to delete canvas from localStorage")
+    console.error("Failed to delete canvas")
   }
 }
 
-// Get canvas status summary for injecting into AI context
-export function getCanvasStatusSummary(sessionId: string): string | null {
-  const canvas = loadCanvas(sessionId)
+// Canvas status summary for AI context
+export async function getCanvasStatusSummary(sessionId: string): Promise<string | null> {
+  const canvas = await loadCanvas(sessionId)
   if (!canvas || canvas.documents.length === 0) return null
 
   const summaries = canvas.documents.map(doc => {
@@ -392,86 +280,69 @@ export function getCanvasStatusSummary(sessionId: string): string | null {
 }
 
 // Agent completion functions
-function getCompletionsKey(sessionId: string): string {
-  return `${COMPLETIONS_KEY_PREFIX}${sessionId}`
+export async function loadAgentCompletions(sessionId: string): Promise<AgentCompletion[]> {
+  const canvas = await loadCanvas(sessionId)
+  return (canvas?.completions as AgentCompletion[]) ?? []
 }
 
-export function loadAgentCompletions(sessionId: string): AgentCompletion[] {
-  if (typeof window === "undefined") return []
-
+export async function addAgentCompletion(sessionId: string, agentId: string, reportPath: string): Promise<void> {
   try {
-    const key = getCompletionsKey(sessionId)
-    const stored = safeGetItem(key)
-    if (!stored) return []
-    return JSON.parse(stored) as AgentCompletion[]
-  } catch {
-    return []
-  }
-}
-
-export function addAgentCompletion(
-  sessionId: string,
-  agentId: string,
-  reportPath: string
-): void {
-  if (typeof window === "undefined") return
-
-  try {
-    const completions = loadAgentCompletions(sessionId)
-    completions.push({
-      agentId,
-      reportPath,
-      completedAt: Date.now(),
-      acknowledged: false,
+    await fetch("/api/db/canvas", {
+      method: "POST",
+      headers: authHeaders({ "Content-Type": "application/json" }),
+      body: JSON.stringify({
+        action: "add-completion",
+        sessionId,
+        agentId,
+        reportPath,
+      }),
     })
-    const key = getCompletionsKey(sessionId)
-    safeSetItem(key, JSON.stringify(completions))
   } catch {
     console.error("Failed to save agent completion")
   }
 }
 
-export function acknowledgeCompletion(sessionId: string, agentId: string): void {
-  if (typeof window === "undefined") return
-
+export async function acknowledgeCompletion(sessionId: string, agentId: string): Promise<void> {
   try {
-    const completions = loadAgentCompletions(sessionId)
-    const updated = completions.map((c) =>
-      c.agentId === agentId ? { ...c, acknowledged: true } : c
-    )
-    const key = getCompletionsKey(sessionId)
-    safeSetItem(key, JSON.stringify(updated))
+    await fetch("/api/db/canvas", {
+      method: "POST",
+      headers: authHeaders({ "Content-Type": "application/json" }),
+      body: JSON.stringify({
+        action: "acknowledge-completion",
+        sessionId,
+        agentId,
+      }),
+    })
   } catch {
     console.error("Failed to acknowledge completion")
   }
 }
 
-// Get unacknowledged agent completions for system prompt injection
-export function getAgentCompletionsSummary(sessionId: string): string | null {
-  const completions = loadAgentCompletions(sessionId)
-  const pending = completions.filter((c) => !c.acknowledged)
+// Agent completion summary for system prompt
+export async function getAgentCompletionsSummary(sessionId: string): Promise<string | null> {
+  const completions = await loadAgentCompletions(sessionId)
+  const pending = completions.filter(c => !c.acknowledged)
 
   if (pending.length === 0) return null
 
   return pending
-    .map((c) => `[Agent Complete: ${c.agentId} | Report: ${c.reportPath}]`)
+    .map(c => `[Agent Complete: ${c.agentId} | Report: ${c.reportPath}]`)
     .join("\n")
 }
 
-// Combined context for system prompt (canvas + completions)
-export function getSessionContext(sessionId: string, canvasUrl?: string): string {
+// Combined context for system prompt
+export async function getSessionContext(sessionId: string, canvasUrl?: string): Promise<string> {
   const parts: string[] = []
 
-  // Always include session info so Jarvis can push to canvas
   parts.push(`[Session: ${sessionId}]`)
   if (canvasUrl) {
     parts.push(`[Canvas URL: ${canvasUrl}]`)
   }
 
-  const canvasStatus = getCanvasStatusSummary(sessionId)
+  const canvasStatus = await getCanvasStatusSummary(sessionId)
   if (canvasStatus) parts.push(canvasStatus)
 
-  const completions = getAgentCompletionsSummary(sessionId)
+  const completions = await getAgentCompletionsSummary(sessionId)
   if (completions) parts.push(completions)
 
   return parts.join("\n")

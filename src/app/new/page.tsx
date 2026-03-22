@@ -3,7 +3,6 @@
 import { useState, useEffect, useCallback } from "react"
 import { useRouter } from "next/navigation"
 import { safeGetItem, safeSetItem, safeRemoveItem, authHeaders } from "@/lib/safe-storage"
-import { appendProject } from "@/lib/projects-storage"
 import { ProjectTypeSelector, ProjectType } from "@/components/project-type-selector"
 import { ProjectIntake } from "@/components/project-intake"
 import { DocumentPicker } from "@/components/document-picker"
@@ -30,11 +29,8 @@ type DraftState = {
   stage: Stage
   projectType: ProjectType | null
   intakeData: IntakeData | null
-  /** Live title while user is typing (before submit) */
   liveTitle?: string
-  /** Live description while user is typing (before submit) */
   liveDescription?: string
-  /** Selected deliverable types on the picker step */
   selectedDeliverables?: DeliverableType[]
 }
 
@@ -44,12 +40,8 @@ function loadDraft(): DraftState | null {
   if (typeof window === "undefined") return null
   try {
     const saved = safeGetItem(DRAFT_KEY)
-    if (saved) {
-      return JSON.parse(saved)
-    }
-  } catch {
-    // Ignore parse errors
-  }
+    if (saved) return JSON.parse(saved)
+  } catch {}
   return null
 }
 
@@ -73,7 +65,6 @@ export default function NewProjectPage() {
   const [liveDescription, setLiveDescription] = useState("")
   const [selectedDeliverables, setSelectedDeliverables] = useState<DeliverableType[]>([])
 
-  // Load draft on mount (unless ?reset=true)
   useEffect(() => {
     const params = new URLSearchParams(window.location.search)
     if (params.get("reset") === "true") {
@@ -93,7 +84,6 @@ export default function NewProjectPage() {
     setIsLoaded(true)
   }, [])
 
-  // Save draft on changes
   useEffect(() => {
     if (!isLoaded) return
     saveDraft({ stage, projectType, intakeData, liveTitle, liveDescription, selectedDeliverables })
@@ -101,7 +91,6 @@ export default function NewProjectPage() {
 
   const handleTypeSelect = (type: ProjectType) => {
     setProjectType(type)
-
     if (type === "fresh") {
       setStage("intake")
     } else if (type === "template") {
@@ -116,17 +105,9 @@ export default function NewProjectPage() {
     setStage("picker")
   }
 
-  const handleTitleChange = useCallback((t: string) => {
-    setLiveTitle(t)
-  }, [])
-
-  const handleDescriptionChange = useCallback((desc: string) => {
-    setLiveDescription(desc)
-  }, [])
-
-  const handleSelectionChange = useCallback((types: DeliverableType[]) => {
-    setSelectedDeliverables(types)
-  }, [])
+  const handleTitleChange = useCallback((t: string) => setLiveTitle(t), [])
+  const handleDescriptionChange = useCallback((desc: string) => setLiveDescription(desc), [])
+  const handleSelectionChange = useCallback((types: DeliverableType[]) => setSelectedDeliverables(types), [])
 
   const handlePickerConfirm = async (selectedTypes: DeliverableType[], inputDocs: File[]) => {
     if (!intakeData) return
@@ -178,12 +159,21 @@ export default function NewProjectPage() {
       sessionId: `session-${Date.now()}`,
     }
 
-    // Store project
-    appendProject(project)
+    // Save project to MongoDB
+    try {
+      const res = await fetch("/api/db/projects", {
+        method: "POST",
+        headers: authHeaders({ "Content-Type": "application/json" }),
+        body: JSON.stringify(project),
+      })
 
-    // Store extracted file content locally for reference
-    if (intakeData.files.length > 0) {
-      safeSetItem(`sources-${projectId}`, JSON.stringify(intakeData.files))
+      if (!res.ok) {
+        console.error("[new] Failed to create project:", await res.text())
+        return
+      }
+    } catch (err) {
+      console.error("[new] Failed to create project:", err)
+      return
     }
 
     // Generate context files on VPS (async, don't block navigation)
@@ -202,23 +192,17 @@ export default function NewProjectPage() {
       })
     }
 
-    // Clear draft after successful creation
     clearDraft()
-
     router.push(`/projects/${projectId}`)
   }
 
-  const handlePickerCancel = () => {
-    setStage("intake")
-  }
-
+  const handlePickerCancel = () => setStage("intake")
   const handleIntakeBack = () => {
     setStage("type-select")
     setProjectType(null)
     setIntakeData(null)
   }
 
-  // Map stages to wizard step indices
   const stepIndex = stage === "type-select" ? 0 : stage === "intake" ? 1 : stage === "picker" ? 2 : 0
 
   const handleCancel = () => {
@@ -231,7 +215,6 @@ export default function NewProjectPage() {
     else if (stage === "picker") handlePickerCancel()
   }
 
-  // Don't render until loaded to prevent flash
   if (!isLoaded) {
     return (
       <div className="min-h-screen bg-zinc-50 dark:bg-zinc-950 flex items-center justify-center">

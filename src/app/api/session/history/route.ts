@@ -9,7 +9,7 @@ export const runtime = "nodejs"
  * Returns real tool call entries from the session transcript.
  */
 export async function GET(request: Request) {
-  const auth = requireAuth(request)
+  const auth = await requireAuth(request)
   if (auth instanceof Response) return auth
 
   const openclawUrl = process.env.OPENCLAW_URL

@@ -1,3 +1,5 @@
+import { auth } from "./auth-config"
+
 /** Validate auth token from request. Returns username or null. */
 export function getAuthToken(request: Request): string | null {
   // Check Authorization header first
@@ -15,8 +17,15 @@ export function getAuthToken(request: Request): string | null {
   return null
 }
 
-/** Require auth - returns 401 Response if not authenticated */
-export function requireAuth(request: Request): { username: string } | Response {
+/** Require auth - checks NextAuth session first, falls back to legacy token */
+export async function requireAuth(request: Request): Promise<{ username: string } | Response> {
+  // Try NextAuth session first
+  const session = await auth()
+  if (session?.user) {
+    return { username: session.user.name || session.user.email || "user" }
+  }
+
+  // Fallback to legacy token auth
   const username = getAuthToken(request)
   if (!username) {
     return new Response(JSON.stringify({ error: "Unauthorized" }), {

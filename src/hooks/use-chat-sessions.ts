@@ -1,44 +1,15 @@
 "use client"
 
-import { useState, useEffect, useCallback } from "react"
+import { useState, useCallback } from "react"
 import { ChatSession, Message, generateId, generateTitle } from "@/lib/types"
-import { safeGetItem, safeSetItem } from "@/lib/safe-storage"
 
-const STORAGE_KEY = "mission-control-sessions"
-
-function loadSessions(): ChatSession[] {
-  if (typeof window === "undefined") return []
-  try {
-    const data = safeGetItem(STORAGE_KEY)
-    return data ? JSON.parse(data) : []
-  } catch {
-    return []
-  }
-}
-
-function saveSessions(sessions: ChatSession[]) {
-  if (typeof window === "undefined") return
-  safeSetItem(STORAGE_KEY, JSON.stringify(sessions))
-}
+// Legacy Jarvis chat sessions — no longer persisted to localStorage.
+// Kept as in-memory state to avoid breaking ChatProvider/sidebar.
+// All project work now goes through deliverables → MongoDB.
 
 export function useChatSessions() {
   const [sessions, setSessions] = useState<ChatSession[]>([])
-  const [isLoaded, setIsLoaded] = useState(false)
-
-  // Load sessions from localStorage on mount
-  useEffect(() => {
-    setSessions(loadSessions())
-    setIsLoaded(true)
-  }, [])
-
-  // Save sessions to localStorage when they change (debounced to avoid thrashing during streaming)
-  useEffect(() => {
-    if (!isLoaded) return
-    const timeoutId = setTimeout(() => {
-      saveSessions(sessions)
-    }, 500) // 500ms debounce
-    return () => clearTimeout(timeoutId)
-  }, [sessions, isLoaded])
+  const isLoaded = true
 
   const createSession = useCallback((firstMessage: string): ChatSession => {
     const now = Date.now()
@@ -80,11 +51,7 @@ export function useChatSessions() {
       setSessions((prev) =>
         prev.map((s) =>
           s.id === sessionId
-            ? {
-                ...s,
-                messages: [...s.messages, message],
-                updatedAt: Date.now(),
-              }
+            ? { ...s, messages: [...s.messages, message], updatedAt: Date.now() }
             : s
         )
       )

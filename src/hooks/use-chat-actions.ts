@@ -2,6 +2,7 @@
 
 import { useState, useCallback, Dispatch, SetStateAction } from "react"
 import { authHeaders } from "@/lib/safe-storage"
+import { deleteCanvas } from "@/lib/canvas-storage"
 import { toast } from "sonner"
 
 export interface UseChatActionsOptions {
@@ -100,11 +101,8 @@ export function useChatActions({
       // Delete from localStorage (chat context)
       deleteSession(sessionId)
 
-      // Clear canvas data for this session
-      localStorage.removeItem(`canvas-${sessionId}`)
-
-      // Clear agent completions for this session
-      localStorage.removeItem(`agent_completions_${sessionId}`)
+      // Clear canvas data and agent completions for this session
+      await deleteCanvas(sessionId)
 
       toast.success('Chat deleted')
 

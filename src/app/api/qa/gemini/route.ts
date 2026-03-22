@@ -66,7 +66,7 @@ BEGIN VALIDATION NOW.`
 }
 
 export async function POST(request: Request) {
-  const auth = requireAuth(request)
+  const auth = await requireAuth(request)
   if (auth instanceof Response) return auth
 
   const geminiKey = process.env.GEMINI_API_KEY

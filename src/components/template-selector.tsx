@@ -104,19 +104,19 @@ export function TemplateSelector({ onBack }: TemplateSelectorProps) {
     setSelectedTemplate(templateId)
   }
 
-  const handleUseTemplate = () => {
+  const handleUseTemplate = async () => {
     if (!selectedTemplate) return
 
     setIsCreating(true)
     const template = templates.find(t => t.id === selectedTemplate)!
 
-    // Create mission from template
-    const missionId = `mission-${Date.now()}`
+    // Create project from template
+    const projectId = `project-${Date.now()}`
     const briefDeliverable = AVAILABLE_DELIVERABLES.find(d => d.type === "product-brief")!
     const workflow = getWorkflowById(briefDeliverable.workflowId)
 
-    const mission: Mission = {
-      id: missionId,
+    const project: Mission = {
+      id: projectId,
       name: `My ${template.name}`,
       mode: "new-build",
       description: template.description,
@@ -151,12 +151,16 @@ export function TemplateSelector({ onBack }: TemplateSelectorProps) {
       sessionId: `session-${Date.now()}`,
     }
 
-    const existing = JSON.parse(localStorage.getItem("missions") || "[]")
-    localStorage.setItem("missions", JSON.stringify([...existing, mission]))
-
-    setTimeout(() => {
-      router.push(`/missions/${missionId}`)
-    }, 500)
+    try {
+      await fetch("/api/db/projects", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(project),
+      })
+      router.push(`/projects/${projectId}`)
+    } catch {
+      setIsCreating(false)
+    }
   }
 
   return (

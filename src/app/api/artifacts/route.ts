@@ -38,7 +38,7 @@ const ARTIFACT_PATHS: Record<string, string> = {
  * Fetches the artifact file from VPS via DUFS
  */
 export async function GET(request: NextRequest) {
-  const auth = requireAuth(request)
+  const auth = await requireAuth(request)
   if (auth instanceof Response) return auth
 
   const { searchParams } = request.nextUrl
@@ -99,7 +99,7 @@ export async function GET(request: NextRequest) {
  * Body: { project: string, rootOnly?: boolean }
  */
 export async function POST(request: NextRequest) {
-  const authPost = requireAuth(request)
+  const authPost = await requireAuth(request)
   if (authPost instanceof Response) return authPost
 
   try {
@@ -134,7 +134,7 @@ export async function POST(request: NextRequest) {
 
 // PUT /api/artifacts — save file content back to VPS
 export async function PUT(request: NextRequest) {
-  const authPut = requireAuth(request)
+  const authPut = await requireAuth(request)
   if (authPut instanceof Response) return authPut
 
   try {

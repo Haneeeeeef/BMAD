@@ -3,7 +3,7 @@ export const runtime = "nodejs"
 import { requireAuth } from "@/lib/auth"
 
 export async function GET(request: Request) {
-  const auth = requireAuth(request)
+  const auth = await requireAuth(request)
   if (auth instanceof Response) return auth
 
   const sessionStatusUrl = process.env.SESSION_STATUS_URL || process.env.SESSION_CLEAR_URL?.replace('/clear', '/status')

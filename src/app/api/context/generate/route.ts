@@ -10,7 +10,7 @@ import * as vps from "@/lib/vps"
 import { requireAuth } from "@/lib/auth"
 
 export async function POST(request: NextRequest) {
-  const auth = requireAuth(request)
+  const auth = await requireAuth(request)
   if (auth instanceof Response) return auth
 
   try {

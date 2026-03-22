@@ -3,7 +3,7 @@ import { getFileType, type ExtractedFile } from "@/lib/file-extraction"
 import { requireAuth } from "@/lib/auth"
 
 export async function POST(request: NextRequest) {
-  const auth = requireAuth(request)
+  const auth = await requireAuth(request)
   if (auth instanceof Response) return auth
 
   try {

@@ -2,8 +2,22 @@
 
 import { useCallback } from "react"
 import { approveDocument, getCurrentVersion, type CanvasData } from "@/lib/canvas-storage"
-import { createProject, findProjectByChatSession, type Project } from "@/lib/projects-storage"
 import { toast } from "sonner"
+
+// Project type for API responses
+interface Project {
+  id: string
+  name: string
+  code: string
+  client: string
+  description: string
+  status: string
+  currentStage: string
+  progress: number
+  agentCount: number
+  chatSessionId?: string
+  createdAt: number
+}
 
 interface UseApprovalOptions {
   sessionId: string
@@ -39,8 +53,8 @@ function extractDescription(content: string): string {
 }
 
 export function useApproval({ sessionId, onUpdate }: UseApprovalOptions) {
-  const approve = useCallback((identifier: string): ApprovalResult => {
-    const updated = approveDocument(sessionId, identifier)
+  const approve = useCallback(async (identifier: string): Promise<ApprovalResult> => {
+    const updated = await approveDocument(sessionId, identifier)
     let project: Project | null = null
     let documentTitle: string | null = null
 
@@ -52,21 +66,42 @@ export function useApproval({ sessionId, onUpdate }: UseApprovalOptions) {
 
       // Create project when project_brief is approved (if not already exists)
       if (doc?.type === "project_brief") {
-        const existingProject = findProjectByChatSession(sessionId)
+        // Check if a project already exists for this chat session
+        const projectsRes = await fetch("/api/db/projects")
+        const allProjects: Project[] = projectsRes.ok ? await projectsRes.json() : []
+        const existingProject = allProjects.find(p => p.chatSessionId === sessionId) || null
+
         if (!existingProject) {
           const version = getCurrentVersion(doc)
           const projectName = extractProjectName(doc.title)
-          project = createProject({
-            code: projectName.slice(0, 3).toUpperCase(),
-            name: projectName,
-            client: "Internal",
-            description: version ? extractDescription(version.content) : "AI-powered project",
-            status: "pending",
-            currentStage: "Discovery",
-            progress: 10,
-            agentCount: 1,
-            chatSessionId: sessionId,
-          })
+          try {
+            const createRes = await fetch("/api/db/projects", {
+              method: "POST",
+              headers: { "Content-Type": "application/json" },
+              body: JSON.stringify({
+                id: `proj-${Date.now()}`,
+                code: projectName.slice(0, 3).toUpperCase(),
+                name: projectName,
+                client: "Internal",
+                description: version ? extractDescription(version.content) : "AI-powered project",
+                status: "pending",
+                currentStage: "Discovery",
+                progress: 10,
+                agentCount: 1,
+                chatSessionId: sessionId,
+              }),
+            })
+            if (createRes.ok) {
+              project = await createRes.json()
+            } else {
+              // Duplicate key error — project already created by another call
+              const retryRes = await fetch("/api/db/projects")
+              const retry: Project[] = retryRes.ok ? await retryRes.json() : []
+              project = retry.find(p => p.chatSessionId === sessionId) || null
+            }
+          } catch {
+            // Silent — project may have been created by another call
+          }
         } else {
           project = existingProject
         }

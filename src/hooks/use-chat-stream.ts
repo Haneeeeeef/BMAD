@@ -106,7 +106,7 @@ export function useChatStream({
 
         // Get session context (canvas + agent completions) to inject into Jarvis
         const canvasUrl = `${window.location.origin}/api/canvas`
-        const sessionContext = getSessionContext(sessionId, canvasUrl)
+        const sessionContext = await getSessionContext(sessionId, canvasUrl)
 
         const response = await fetch("/api/chat", {
           method: "POST",

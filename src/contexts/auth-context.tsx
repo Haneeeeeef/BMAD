@@ -1,13 +1,15 @@
 "use client"
 
-import { createContext, useContext, useEffect, useState, useMemo, useCallback, ReactNode } from "react"
+import { createContext, useContext, useMemo, ReactNode } from "react"
+import { useSession, signOut } from "next-auth/react"
 import { useRouter, usePathname } from "next/navigation"
-import { safeGetItem, safeRemoveItem } from "@/lib/safe-storage"
 
 interface User {
+  id: string
   username: string
-  token: string
-  createdAt: number
+  email: string
+  image?: string | null
+  token: string // backwards compat — use id for new code
 }
 
 interface AuthContextType {
@@ -27,51 +29,36 @@ export function useAuth() {
 }
 
 export function AuthProvider({ children }: { children: ReactNode }) {
-  const [user, setUser] = useState<User | null>(null)
-  const [isLoading, setIsLoading] = useState(true)
+  const { data: session, status } = useSession()
   const router = useRouter()
   const pathname = usePathname()
 
-  useEffect(() => {
-    // Check for stored user
-    const stored = safeGetItem("mc_user")
-    if (stored) {
-      try {
-        const parsed = JSON.parse(stored)
-        setUser(parsed)
-      } catch {
-        safeRemoveItem("mc_user")
-      }
+  const isLoading = status === "loading"
+
+  const user: User | null = useMemo(() => {
+    if (!session?.user) return null
+    const name = session.user.name || session.user.email?.split("@")[0] || "user"
+    return {
+      id: session.user.id || session.user.email || name,
+      username: name,
+      email: session.user.email || "",
+      image: session.user.image,
+      token: `mc_${name}`, // backwards compat for existing auth headers
     }
-    setIsLoading(false)
-  }, [])
+  }, [session])
 
-  useEffect(() => {
-    // Public routes that don't require authentication
-    const publicRoutes = ["/", "/login"]
-    // Redirect to login if not authenticated (except on public pages)
-    if (!isLoading && !user && !publicRoutes.includes(pathname)) {
-      router.push("/login")
-    }
-  }, [user, isLoading, pathname, router])
-
-  const logout = useCallback(() => {
-    safeRemoveItem("mc_user")
-    setUser(null)
-    router.push("/login")
-  }, [router])
-
-  const value = useMemo(() => ({ user, isLoading, logout }), [user, isLoading, logout])
-
-  // Show nothing while checking auth (prevents flash)
-  if (isLoading) {
-    return null
+  const logout = () => {
+    signOut({ callbackUrl: "/login" })
   }
 
-  // Public routes that don't require authentication
+  const value = useMemo(() => ({ user, isLoading, logout }), [user, isLoading])
+
+  if (isLoading) return null
+
+  // Redirect unauthenticated users to login (except public routes)
   const publicRoutes = ["/", "/login"]
-  // If not logged in and not on public page, show nothing (will redirect)
   if (!user && !publicRoutes.includes(pathname)) {
+    router.push("/login")
     return null
   }
 

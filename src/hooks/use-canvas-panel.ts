@@ -43,14 +43,16 @@ export function useCanvasPanel({ sessionId, router }: UseCanvasPanelOptions): Us
   const [canvasWidth, setCanvasWidth] = useState(520) // Default 520px
   const isResizing = useRef(false)
 
-  // Load canvas from localStorage on mount (but don't auto-open)
+  // Load canvas from DB on mount (but don't auto-open)
   useEffect(() => {
     if (sessionId) {
-      const savedCanvas = loadCanvas(sessionId)
-      if (savedCanvas && savedCanvas.documents.length > 0) {
-        setCanvasData(savedCanvas)
-        setActiveDocumentId(savedCanvas.activeDocumentId || savedCanvas.documents[0]?.identifier)
-      }
+      (async () => {
+        const savedCanvas = await loadCanvas(sessionId)
+        if (savedCanvas && savedCanvas.documents.length > 0) {
+          setCanvasData(savedCanvas)
+          setActiveDocumentId(savedCanvas.activeDocumentId || savedCanvas.documents[0]?.identifier)
+        }
+      })()
     }
   }, [sessionId])
 
@@ -74,7 +76,7 @@ export function useCanvasPanel({ sessionId, router }: UseCanvasPanelOptions): Us
           lastPollContent.current = pollKey
 
           // Save as document (only creates new version if content changed)
-          const updated = saveDocument(sessionId, {
+          const updated = await saveDocument(sessionId, {
             identifier: data.identifier || "api-document",
             title: data.title || "Document",
             type: data.type || "text/markdown",
@@ -108,8 +110,8 @@ export function useCanvasPanel({ sessionId, router }: UseCanvasPanelOptions): Us
   })
 
   // Handle approval with redirect to project
-  const handleCanvasApprove = useCallback((identifier: string) => {
-    const result = approve(identifier)
+  const handleCanvasApprove = useCallback(async (identifier: string) => {
+    const result = await approve(identifier)
     if (result.project) {
       // Redirect to project page with autoChat to continue conversation
       const url = `/projects/${result.project.id}?autoChat=true&docTitle=${encodeURIComponent(result.documentTitle || '')}`
@@ -117,14 +119,14 @@ export function useCanvasPanel({ sessionId, router }: UseCanvasPanelOptions): Us
     }
   }, [approve, router])
 
-  const handleDocumentSelect = useCallback((identifier: string) => {
+  const handleDocumentSelect = useCallback(async (identifier: string) => {
     setActiveDocumentId(identifier)
-    setActiveDocument(sessionId, identifier)
+    await setActiveDocument(sessionId, identifier)
   }, [sessionId])
 
-  const handleDocumentClose = useCallback((identifier: string) => {
+  const handleDocumentClose = useCallback(async (identifier: string) => {
     // Delete the document and all its versions
-    const updated = removeDocument(sessionId, identifier)
+    const updated = await removeDocument(sessionId, identifier)
     if (updated) {
       setCanvasData(updated)
       setActiveDocumentId(updated.activeDocumentId)
@@ -134,8 +136,8 @@ export function useCanvasPanel({ sessionId, router }: UseCanvasPanelOptions): Us
     }
   }, [sessionId])
 
-  const handleVersionChange = useCallback((identifier: string, version: number) => {
-    const updated = setDocumentVersion(sessionId, identifier, version)
+  const handleVersionChange = useCallback(async (identifier: string, version: number) => {
+    const updated = await setDocumentVersion(sessionId, identifier, version)
     if (updated) {
       setCanvasData(updated)
     }

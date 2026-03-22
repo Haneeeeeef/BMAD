@@ -2,27 +2,12 @@
 
 import { useState, useCallback, useRef } from "react"
 import { Message, generateId } from "@/lib/types"
-import { safeGetItem, authHeaders } from "@/lib/safe-storage"
+import { authHeaders } from "@/lib/safe-storage"
 import { parseSSEStream } from "@/lib/sse"
 
 interface UseChatOptions {
   initialMessages?: Message[]
   onFinish?: (message: Message) => void
-}
-
-// Get user token from localStorage
-function getUserToken(): string | null {
-  if (typeof window === "undefined") return null
-  try {
-    const stored = safeGetItem("mc_user")
-    if (stored) {
-      const parsed = JSON.parse(stored)
-      return parsed.token || null
-    }
-  } catch {
-    // Ignore parse errors
-  }
-  return null
 }
 
 export function useChat(options: UseChatOptions = {}) {
@@ -55,9 +40,6 @@ export function useChat(options: UseChatOptions = {}) {
     try {
       abortControllerRef.current = new AbortController()
 
-      // Include user token for per-user session isolation
-      const userToken = getUserToken()
-
       const response = await fetch("/api/chat", {
         method: "POST",
         headers: authHeaders({ "Content-Type": "application/json" }),
@@ -66,7 +48,6 @@ export function useChat(options: UseChatOptions = {}) {
             role: m.role,
             content: m.content,
           })),
-          userToken, // Pass user token for session isolation
         }),
         signal: abortControllerRef.current.signal,
       })

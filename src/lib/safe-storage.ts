@@ -1,8 +1,6 @@
 /**
- * Safe localStorage wrapper that handles:
- * - Safari private browsing (throws on setItem)
- * - Quota exceeded errors
- * - SSR environments (no window)
+ * Safe localStorage wrapper — only used for ephemeral client-side state
+ * (e.g., project creation drafts). All persistent data is in MongoDB.
  */
 
 export function safeGetItem(key: string): string | null {
@@ -30,26 +28,7 @@ export function safeRemoveItem(key: string): void {
   }
 }
 
-/** Get the auth token from localStorage for API requests */
-export function getAuthToken(): string | null {
-  const stored = safeGetItem("mc_user")
-  if (!stored) return null
-  try {
-    const parsed = JSON.parse(stored)
-    return parsed.token || null
-  } catch {
-    return null
-  }
-}
-
-/** Get headers object with auth token for fetch calls to /api/* routes */
+/** Get headers for fetch calls — auth is handled by NextAuth cookies automatically */
 export function authHeaders(extra?: Record<string, string>): Record<string, string> {
-  const token = getAuthToken()
-  const headers: Record<string, string> = {
-    ...extra,
-  }
-  if (token) {
-    headers["x-auth-token"] = token
-  }
-  return headers
+  return { ...extra }
 }

@@ -1,78 +1,65 @@
-export const runtime = "edge"
+export const runtime = "nodejs"
 
+import { NextRequest, NextResponse } from "next/server"
 import { requireAuth } from "@/lib/auth"
+import { getDb } from "@/lib/db/client"
 
-// In-memory store (resets on deploy, but fine for MVP)
-// For production, use Redis or database
-const canvasStore = new Map<string, CanvasData>()
+// Temporary inbox collection — agents POST artifacts here,
+// the frontend polls and consumes them (deletes after read).
+// This replaces the old in-memory Map that reset on deploy.
 
-interface CanvasData {
-  sessionId: string
-  content: string
-  status: "draft" | "awaiting_approval" | "approved"
-  sections?: Record<string, string>
-  updatedAt: number
+async function getInboxCollection() {
+  const db = await getDb()
+  return db.collection("bmad_canvas_inbox")
 }
 
-// POST /api/canvas - Jarvis pushes canvas content
-export async function POST(request: Request) {
-  const auth = requireAuth(request)
+// POST /api/canvas — Agent pushes canvas content
+export async function POST(request: NextRequest) {
+  const auth = await requireAuth(request)
   if (auth instanceof Response) return auth
 
   try {
-    const data: CanvasData = await request.json()
+    const data = await request.json()
 
     if (!data.sessionId || !data.content) {
-      return new Response(
-        JSON.stringify({ error: "sessionId and content required" }),
-        { status: 400, headers: { "Content-Type": "application/json" } }
-      )
+      return NextResponse.json({ error: "sessionId and content required" }, { status: 400 })
     }
 
-    // Store with timestamp
-    canvasStore.set(data.sessionId, {
-      ...data,
-      updatedAt: Date.now(),
-    })
+    const col = await getInboxCollection()
 
-    return new Response(
-      JSON.stringify({ success: true, sessionId: data.sessionId }),
-      { status: 200, headers: { "Content-Type": "application/json" } }
+    // Upsert by sessionId + identifier to prevent duplicates
+    const key = { sessionId: data.sessionId, identifier: data.identifier || "api-document" }
+    await col.updateOne(
+      key,
+      { $set: { ...data, updatedAt: Date.now() } },
+      { upsert: true }
     )
-  } catch (error) {
-    return new Response(
-      JSON.stringify({ error: "Invalid request" }),
-      { status: 400, headers: { "Content-Type": "application/json" } }
-    )
+
+    return NextResponse.json({ success: true, sessionId: data.sessionId })
+  } catch {
+    return NextResponse.json({ error: "Invalid request" }, { status: 400 })
   }
 }
 
-// GET /api/canvas?sessionId=xxx - Frontend polls for canvas data
-export async function GET(request: Request) {
-  const authGet = requireAuth(request)
-  if (authGet instanceof Response) return authGet
+// GET /api/canvas?sessionId=xxx — Frontend polls for new artifacts
+export async function GET(request: NextRequest) {
+  const auth = await requireAuth(request)
+  if (auth instanceof Response) return auth
 
-  const url = new URL(request.url)
-  const sessionId = url.searchParams.get("sessionId")
-
+  const sessionId = request.nextUrl.searchParams.get("sessionId")
   if (!sessionId) {
-    return new Response(
-      JSON.stringify({ error: "sessionId required" }),
-      { status: 400, headers: { "Content-Type": "application/json" } }
-    )
+    return NextResponse.json({ error: "sessionId required" }, { status: 400 })
   }
 
-  const data = canvasStore.get(sessionId)
+  const col = await getInboxCollection()
+  const data = await col.findOne({ sessionId })
 
   if (!data) {
-    return new Response(
-      JSON.stringify({ exists: false }),
-      { status: 200, headers: { "Content-Type": "application/json" } }
-    )
+    return NextResponse.json({ exists: false })
   }
 
-  return new Response(
-    JSON.stringify({ exists: true, ...data }),
-    { status: 200, headers: { "Content-Type": "application/json" } }
-  )
+  // Consume: delete after read to prevent duplicate processing
+  await col.deleteOne({ _id: data._id })
+
+  return NextResponse.json({ exists: true, ...data })
 }
